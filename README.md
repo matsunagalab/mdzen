@@ -26,10 +26,10 @@ CHARMM-GUIに代わる、お手軽でフレクシブルなMD入力ファイル�
 ### 前提条件
 
 - Python 3.11以上
-- [uv](https://github.com/astral-sh/uv) (Pythonパッケージマネージャー)
-- [conda](https://docs.conda.io/en/latest/) または [mamba](https://mamba.readthedocs.io/) (外部ツール用)
+- [conda](https://docs.conda.io/en/latest/) または [mamba](https://mamba.readthedocs.io/) (推奨)
 - [LM Studio](https://lmstudio.ai/) (ローカルLLM実行)
 - GPU推奨（Boltz-2、OpenMM高速化）
+- （オプション）[uv](https://github.com/astral-sh/uv) - 高速なPythonパッケージマネージャー
 
 ### インストール手順
 
@@ -40,52 +40,67 @@ git clone https://github.com/matsunagalab/mcp-md.git
 cd mcp-md
 ```
 
-#### 2. Python環境のセットアップ (uv)
+#### 2. conda環境のセットアップ（推奨）
+
+すべての依存関係を1つのconda環境で管理します：
+
+```bash
+# conda環境作成
+conda create -n mcp-md python=3.11
+conda activate mcp-md
+
+# 外部ツールをインストール（conda-forge）
+conda install -c conda-forge ambertools packmol smina pdbfixer
+
+# Python依存関係をインストール（同じconda環境内）
+pip install -e .
+
+# Boltz-2インストール（GPU版）
+pip install "boltz[cuda]" -U
+
+# PDB2PQR, PROPKA
+pip install pdb2pqr propka
+
+# 開発用パッケージ（オプション）
+pip install -e ".[dev]"
+```
+
+> **注意**: 今後MCPサーバーを使用する際は、必ず`conda activate mcp-md`で環境を有効化してください。
+
+#### （代替） uv + conda 併用セットアップ
+
+Python依存関係をuvで、外部ツールをcondaで管理する場合：
 
 ```bash
 # uv仮想環境作成
 uv venv
-
-# 仮想環境をアクティベート
 source .venv/bin/activate  # Linux/macOS
-# または
-.venv\Scripts\activate  # Windows
 
-# 依存関係をインストール
+# Python依存関係
 uv pip install -e .
-
-# Boltz-2インストール（GPU版）
 uv pip install "boltz[cuda]" -U
 
-# 開発用パッケージ（オプション）
-uv pip install -e ".[dev]"
-```
-
-#### 3. 外部ツールのインストール (conda)
-
-```bash
-# conda環境作成
+# 別途conda環境で外部ツール
 conda create -n mcp-md-tools python=3.11
 conda activate mcp-md-tools
-
-# AmberTools, Packmol, smina, PDBFixer
 conda install -c conda-forge ambertools packmol smina pdbfixer
-
-# PDB2PQR, PROPKA
 pip install pdb2pqr propka
 ```
 
-#### 4. LM Studioのセットアップ
+#### 3. LM Studioのセットアップ
 
 1. [LM Studio](https://lmstudio.ai/)をダウンロード・インストール
 2. LM Studio GUIでモデルをダウンロード（推奨: `gpt-oss-20b`）
 3. `Local Server`タブで`Start Server`をクリック（デフォルト: `http://localhost:1234`）
-4. 環境変数を設定:
+4. 環境変数を設定（オプション）:
 
 ```bash
+# ~/.bashrc または ~/.zshrc に追加
 export LM_STUDIO_BASE_URL="http://localhost:1234/v1"
 export LM_STUDIO_MODEL="gpt-oss-20b"
 ```
+
+> **ヒント**: 環境変数を設定しない場合、デフォルト値が使用されます。
 
 ## 使用方法
 
@@ -94,24 +109,29 @@ export LM_STUDIO_MODEL="gpt-oss-20b"
 各機能は独立したMCPサーバーとして動作します：
 
 ```bash
+# conda環境をアクティベート
+conda activate mcp-md
+
 # Structure Server（構造取得・Boltz-2予測）
-uv run python servers/structure_server.py
+python -m servers.structure_server
 
 # Ligand Server（配位子パラメータ化）
-uv run python servers/ligand_server.py
+python -m servers.ligand_server
 
 # Docking Server（smina ドッキング）
-uv run python servers/docking_server.py
+python -m servers.docking_server
 
 # Assembly Server（系の組立）
-uv run python servers/assembly_server.py
+python -m servers.assembly_server
 
 # Protocol Server（OpenMM MDスクリプト）
-uv run python servers/protocol_server.py
+python -m servers.protocol_server
 
 # Export Server（形式変換）
-uv run python servers/export_server.py
+python -m servers.export_server
 ```
+
+> **重要**: サーバー起動前に必ず`conda activate mcp-md`で環境を有効化してください。
 
 ### ワークフロー例
 
@@ -231,20 +251,23 @@ mcp-md/
 ### テスト実行
 
 ```bash
-uv run pytest tests/
+conda activate mcp-md
+pytest tests/
 ```
 
 ### コードフォーマット
 
 ```bash
+conda activate mcp-md
+
 # フォーマット適用
-uv run black servers/ core/ tools/
+black servers/ core/ tools/
 
 # Lintチェック
-uv run ruff check servers/ core/ tools/
+ruff check servers/ core/ tools/
 
 # 型チェック
-uv run mypy servers/ core/ tools/
+mypy servers/ core/ tools/
 ```
 
 ## サポートされる力場

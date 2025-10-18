@@ -12,6 +12,8 @@ dependencies = [
     "boltz>=2.0.0",
     "openmm>=8.3.1",
     "mdanalysis>=2.10.0",
+    "pdb2pqr>=3.1.0",
+    "propka>=3.5.0",
     
     # Ligand processing
     "rdkit>=2023.9.1",

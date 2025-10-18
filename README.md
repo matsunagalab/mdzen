@@ -53,13 +53,11 @@ conda activate mcp-md
 conda install -c conda-forge ambertools packmol smina pdbfixer
 
 # Python依存関係をインストール（同じconda環境内）
+# pdb2pqr, propkaも自動的にインストールされます
 pip install -e .
 
 # Boltz-2インストール（GPU版）
 pip install "boltz[cuda]" -U
-
-# PDB2PQR, PROPKA
-pip install pdb2pqr propka
 
 # 開発用パッケージ（オプション）
 pip install -e ".[dev]"
@@ -84,7 +82,6 @@ uv pip install "boltz[cuda]" -U
 conda create -n mcp-md-tools python=3.11
 conda activate mcp-md-tools
 conda install -c conda-forge ambertools packmol smina pdbfixer
-pip install pdb2pqr propka
 ```
 
 #### 3. LM Studioのセットアップ

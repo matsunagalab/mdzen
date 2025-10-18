@@ -68,8 +68,8 @@ uv pip install -e ".[dev]"
 conda create -n mcp-md-tools python=3.11
 conda activate mcp-md-tools
 
-# AmberTools, Packmol, smina
-conda install -c conda-forge ambertools packmol smina
+# AmberTools, Packmol, smina, PDBFixer
+conda install -c conda-forge ambertools packmol smina pdbfixer
 
 # PDB2PQR, PROPKA
 pip install pdb2pqr propka

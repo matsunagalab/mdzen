@@ -11,7 +11,6 @@ dependencies = [
     # Structure prediction & modeling
     "boltz>=2.0.0",
     "openmm>=8.3.1",
-    "pdbfixer>=1.9",
     "mdanalysis>=2.10.0",
     
     # Ligand processing

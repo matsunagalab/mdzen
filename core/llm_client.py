@@ -20,7 +20,7 @@ class LMStudioClient:
     
     環境変数:
         LM_STUDIO_BASE_URL: LM StudioサーバーURL (デフォルト: http://localhost:1234/v1)
-        LM_STUDIO_MODEL: 使用するモデル名 (デフォルト: llama-3.1-8b-instruct)
+        LM_STUDIO_MODEL: 使用するモデル名 (デフォルト: gpt-oss-20b)
     
     Example:
         >>> client = LMStudioClient()
@@ -46,7 +46,7 @@ class LMStudioClient:
         )
         self.model = model or os.getenv(
             "LM_STUDIO_MODEL",
-            "llama-3.1-8b-instruct"
+            "gpt-oss-20b"
         )
         
         # OpenAI clientの初期化（LM Studioは認証不要なのでダミーキー）

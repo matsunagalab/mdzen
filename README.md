@@ -78,13 +78,13 @@ pip install pdb2pqr propka
 #### 4. LM Studioのセットアップ
 
 1. [LM Studio](https://lmstudio.ai/)をダウンロード・インストール
-2. LM Studio GUIでモデルをダウンロード（推奨: `Llama-3.1-8B-Instruct`）
+2. LM Studio GUIでモデルをダウンロード（推奨: `gpt-oss-20b`）
 3. `Local Server`タブで`Start Server`をクリック（デフォルト: `http://localhost:1234`）
 4. 環境変数を設定:
 
 ```bash
 export LM_STUDIO_BASE_URL="http://localhost:1234/v1"
-export LM_STUDIO_MODEL="llama-3.1-8b-instruct"
+export LM_STUDIO_MODEL="gpt-oss-20b"
 ```
 
 ## 使用方法

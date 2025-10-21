@@ -88,6 +88,7 @@ class PDBFixerWrapper:
         
         # Find missing atoms
         if add_missing_atoms:
+            fixer.findMissingResidues()  #  findMissingResiduesがないとfindMissingAtomsが動かないため追加(暫定)
             fixer.findMissingAtoms()
             if fixer.missingAtoms or fixer.missingTerminals:
                 num_missing_atoms = sum(len(atoms) for atoms in fixer.missingAtoms.values())
@@ -167,7 +168,7 @@ class PDBFixerWrapper:
         fixer = PDBFixer(filename=str(input_pdb))
         
         # Add hydrogens
-        fixer.addMissingHydrogens(ph=ph)
+        fixer.addMissingHydrogens(pH=ph)
         
         # Write output
         with open(output_pdb, 'w') as f:

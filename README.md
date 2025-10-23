@@ -5,16 +5,19 @@ CHARMM-GUIに代わる、お手軽でフレクシブルなMD入力ファイル�
 ## 特徴
 
 - **Boltz-2統合**: FASTAやSMILESから高精度な構造予測と結合親和性予測
-  - 構造予測、複合体+親和性予測、バーチャルスクリーニング、欠損残基補完
+  - 構造予測、複合体+親和性予測、バーチャルスクリーニング
 - **AmberTools完結**: 配位子パラメータ化に外部QMソフト不要（AM1-BCC電荷計算）
   - SMILES → 3D → GAFF2パラメータ → tleapライブラリの完全自動化
-- **高度な構造処理** 🆕:
+- **高度な構造処理**:
   - PDB2PQR+PROPKAによるpH指定プロトネーション
   - ジスルフィド結合・金属サイト自動検出
-- **膜タンパク質系** 🆕: Packmol-Memgen統合で脂質二重層自動構築
+- **膜タンパク質系**: Packmol-Memgen統合で脂質二重層自動構築
 - **OpenMM専用**: Pythonプログラマブルなプロダクションレディなスクリプト生成
 - **LM Studio統合**: ローカルLLMによる自然言語ワークフロー生成
-- **MCPアーキテクチャ**: 機能別サーバーでモジュラーな設計
+- **FastMCP統合** 🆕: モジュラーな独立サーバー、型安全な自動スキーマ生成
+  - 7つの独立したFastMCPサーバー（各サーバーが単独で動作可能）
+  - デコレータベースのシンプルなAPI（`@mcp.tool`）
+  - 標準MCP準拠で将来のLLM/実行基盤更新に強い
 
 ## 📚 ドキュメント
 
@@ -53,7 +56,7 @@ conda activate mcp-md
 conda install -c conda-forge ambertools packmol smina pdbfixer
 
 # Python依存関係をインストール（同じconda環境内）
-# pdb2pqr, propkaも自動的にインストールされます
+# fastmcp, pdb2pqr, propkaも自動的にインストールされます
 pip install -e .
 
 # Boltz-2インストール（GPU版）
@@ -136,7 +139,7 @@ mcp-md chat --lm-studio-url http://192.168.1.100:1234/v1
 
 ### MCPサーバーの起動（マニュアル）
 
-各機能は独立したMCPサーバーとして動作します：
+各機能は独立したFastMCPサーバーとして動作します：
 
 ```bash
 # conda環境をアクティベート
@@ -172,27 +175,23 @@ python -m servers.qc_min_server
 
 ```python
 # 1. 構造予測
-result = await predict_structure_boltz2(
-    fasta="MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNL...",
+result = await boltz2_protein_from_seq(
+    sequence="MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNL...",
     use_msa=True,
     num_models=5
 )
 
 # 2. 系の構築
-system = await build_protein_system(
-    pdb_file=result["structures"][0],
-    forcefield="ff19SB"
+system = await build_system_tleap(
+    protein_pdb=result["structures"][0],
+    forcefield="leaprc.protein.ff19SB"
 )
 
-# 3. 溶媒化・イオン追加
-solvated = await solvate_box(system, padding=10.0)
-final = await add_ions(solvated, concentration=0.15)
-
-# 4. OpenMM MDスクリプト生成
-workflow = await create_openmm_workflow(
-    prmtop=final["prmtop"],
-    inpcrd=final["inpcrd"],
-    protocol="standard"
+# 3. エネルギー最小化
+minimized = await openmm_minimize(
+    prmtop=system["prmtop"],
+    inpcrd=system["inpcrd"],
+    max_iterations=5000
 )
 ```
 
@@ -200,10 +199,10 @@ workflow = await create_openmm_workflow(
 
 ```python
 # タンパク質-リガンド複合体の構造と親和性を同時予測
-result = await predict_complex_with_affinity(
+result = await boltz2_complex(
     protein_fasta="MKTAYIAK...",
-    ligand_smiles=["CC(=O)Oc1ccccc1C(=O)O"],  # Aspirin
-    predict_affinity=True
+    ligand_smiles="CC(=O)Oc1ccccc1C(=O)O",  # Aspirin
+    use_msa=True
 )
 
 # 親和性結果
@@ -211,9 +210,10 @@ print(f"Binder probability: {result['affinity']['probability_binary']:.2f}")
 print(f"IC50: {result['affinity']['ic50_um']:.2f} μM")
 
 # 複合体構造でMD系構築
-complex_system = await build_complex_system(
+complex_system = await build_system_tleap(
     protein_pdb=result["structures"][0],
-    ligand_mol2="ligand.mol2"
+    ligand_lib="ligand.lib",
+    ligand_frcmod="ligand.frcmod"
 )
 ```
 
@@ -222,29 +222,27 @@ complex_system = await build_complex_system(
 ```python
 # 既存PDB構造にリガンドをドッキング
 protein = await fetch_pdb("1ABC")
-cleaned = await clean_structure(protein)
+cleaned = await clean_structure(protein["file_path"])
 
-# SMILESから3D構造生成
-ligand_3d = await smiles_to_3d("CC(=O)Oc1ccccc1C(=O)O")
-
-# AmberToolsでGAFF2パラメータ生成
-params = await generate_gaff_params(
-    ligand_file=ligand_3d["mol2"],
+# SMILESから3D構造生成 + GAFF2パラメータ化
+ligand_params = await parameterize_ligand_complete(
+    smiles="CC(=O)Oc1ccccc1C(=O)O",
     charge_method="bcc"  # AM1-BCC
 )
 
 # sminaでドッキング
-docked = await dock_ligand_smina(
-    receptor_pdb=cleaned["pdb"],
-    ligand_mol2=params["mol2"],
-    center=[10.0, 15.0, 20.0],
-    size=[20.0, 20.0, 20.0]
+docked = await smina_dock(
+    receptor=cleaned["output"],
+    ligand=ligand_params["gaff_mol2"],
+    center_x=10.0, center_y=15.0, center_z=20.0,
+    size_x=20.0, size_y=20.0, size_z=20.0
 )
 
 # 複合体MD系構築
-final_system = await build_complex_system(
-    protein_pdb=cleaned["pdb"],
-    ligand_mol2=docked["poses"][0]
+final_system = await build_system_tleap(
+    protein_pdb=cleaned["output"],
+    ligand_lib=ligand_params["library"],
+    ligand_frcmod=ligand_params["frcmod"]
 )
 ```
 
@@ -252,30 +250,26 @@ final_system = await build_complex_system(
 
 ```
 mcp-md/
-├── servers/              # MCPサーバー実装
-│   ├── structure_server.py
-│   ├── ligand_server.py
-│   ├── docking_server.py
-│   ├── assembly_server.py
-│   ├── protocol_server.py
-│   └── export_server.py
-├── core/                 # コアエンジン
-│   ├── llm_client.py     # LM Studio統合
-│   ├── planner.py        # ワークフロープランニング
-│   ├── validator.py      # QC/バリデーション
-│   └── workflow.py       # ワークフロー実行
-├── tools/                # 外部ツールラッパー
-│   ├── boltz2_wrapper.py
-│   ├── pdbfixer_wrapper.py
-│   ├── openmm_wrapper.py
-│   ├── rdkit_wrapper.py
-│   ├── ambertools_wrapper.py
-│   ├── smina_wrapper.py
-│   └── packmol_wrapper.py
+├── servers/              # FastMCP サーバー実装（7サーバー）
+│   ├── structure_server.py   # PDB取得・修復
+│   ├── genesis_server.py     # Boltz-2構造生成
+│   ├── complex_server.py     # 複合体予測・ドッキング
+│   ├── ligand_server.py      # 配位子パラメータ化
+│   ├── assembly_server.py    # 系の組立
+│   ├── export_server.py      # 形式変換
+│   └── qc_min_server.py      # 品質チェック・最小化
+├── common/               # 共通ライブラリ
+│   ├── base.py          # BaseToolWrapper（外部ツール実行）
+│   └── utils.py         # 共通ユーティリティ関数
+├── core/                 # エージェント実装
+│   ├── strands_agent.py  # Strands Agent + FastMCP Client
+│   ├── workflow_skeleton.py  # 固定ワークフロースケルトン
+│   ├── decision_logger.py    # 意思決定ログ
+│   └── models.py             # Pydanticモデル
 ├── tests/                # テストコード
-├── examples/             # 使用例・YAMLテンプレート
-├── docs/                 # ドキュメント
-├── pyproject.toml        # プロジェクト設定
+├── examples/             # 使用例・ワークフローテンプレート
+├── pyproject.toml        # プロジェクト設定（fastmcp統合）
+├── ARCHITECTURE.md       # 詳細アーキテクチャ・技術仕様
 └── README.md             # このファイル
 ```
 
@@ -294,219 +288,142 @@ pytest tests/
 conda activate mcp-md
 
 # フォーマット適用
-black servers/ core/ tools/
+black servers/ core/ common/
 
 # Lintチェック
-ruff check servers/ core/ tools/
+ruff check servers/ core/ common/
 
 # 型チェック
-mypy servers/ core/ tools/
+mypy servers/ core/ common/
 ```
 
 ## 開発ワークフロー
 
-### 新しいMCPサーバーの追加
+### 新しいMCPサーバーの追加（FastMCP）
 
-1. **ツールラッパー作成** (`tools/`)
-
-   ```python
-   # tools/new_tool_wrapper.py
-   from .base_wrapper import BaseToolWrapper
-   
-   class NewToolWrapper(BaseToolWrapper):
-       def __init__(self):
-           super().__init__("tool_name", conda_env="mcp-md")
-       
-       def process(self, input_file, output_file):
-           """Tool-specific processing"""
-           args = ['-i', input_file, '-o', output_file]
-           return self.run(args)
-   ```
-
-2. **MCPサーバー作成** (`servers/`)
+1. **サーバーファイル作成** (`servers/`)
 
    ```python
    # servers/new_server.py
-   from .base_server import BaseMCPServer
-   from tools.new_tool_wrapper import NewToolWrapper
-   from mcp.types import Tool
+   from pathlib import Path
+   from fastmcp import FastMCP
+   from common.base import BaseToolWrapper
+   from common.utils import setup_logger, ensure_directory
    
-   class NewServer(BaseMCPServer):
-       def __init__(self):
-           super().__init__("new_server", "0.1.0")
-           self.tool_wrapper = NewToolWrapper()
-           self.setup_handlers()
+   logger = setup_logger(__name__)
+   mcp = FastMCP("New Server")
+   
+   # 作業ディレクトリ
+   WORKING_DIR = Path("output/new_server")
+   ensure_directory(WORKING_DIR)
+   
+   # 外部ツールラッパー（必要に応じて）
+   tool_wrapper = BaseToolWrapper("tool_name", conda_env="mcp-md")
+   
+   @mcp.tool
+   def process_data(input_file: str, param: int = 0) -> dict:
+       """Process data with new tool
        
-       def setup_handlers(self):
-           @self.server.list_tools()
-           async def list_tools() -> list[Tool]:
-               return [
-                   Tool(
-                       name="process_data",
-                       description="Process data with new tool",
-                       inputSchema={
-                           "type": "object",
-                           "properties": {
-                               "input": {"type": "string"}
-                           }
-                       }
-                   )
-               ]
-           
-           @self.server.call_tool()
-           async def call_tool(name: str, arguments: dict):
-               if name == "process_data":
-                   result = await self.process_data(arguments["input"])
-                   return self.create_tool_response(json.dumps(result))
+       Args:
+           input_file: Input file path
+           param: Optional parameter
+       
+       Returns:
+           Processing results
+       """
+       logger.info(f"Processing {input_file}")
+       
+       # 外部ツール実行
+       result = tool_wrapper.run(['-i', input_file, '--param', str(param)])
+       
+       return {
+           "status": "success",
+           "output_file": str(WORKING_DIR / "output.dat")
+       }
+   
+   if __name__ == "__main__":
+       mcp.run()  # STDIO transport (default)
    ```
 
-3. **テスト作成** (`tests/`)
+2. **テスト作成** (`tests/`)
 
    ```python
    # tests/test_new_server.py
    import pytest
-   from servers.new_server import NewServer
+   from fastmcp import Client
    
    @pytest.mark.asyncio
    async def test_new_server():
-       server = NewServer()
-       result = await server.process_data("test_input")
-       assert result["success"] == True
+       # Import server module to get mcp instance
+       from servers import new_server
+       
+       # Connect to server using in-memory transport
+       async with Client(new_server.mcp) as client:
+           tools = await client.list_tools()
+           assert "process_data" in [t.name for t in tools]
+           
+           result = await client.call_tool("process_data", {
+               "input_file": "test.dat"
+           })
+           assert result.content[0].text  # Check result exists
    ```
 
-### MCPツールの追加
+3. **Strands Agentに登録** (`core/strands_agent.py`)
+
+   ```python
+   # _create_mcp_config() に追加
+   servers = {
+       # ... 既存のサーバー
+       "new": "new_server",
+   }
+   ```
+
+### MCPツールの追加（FastMCP）
 
 既存サーバーに新しいツールを追加する場合：
 
-1. `servers/xxx_server.py`の`list_tools()`に`Tool`定義追加
-2. `call_tool()`ハンドラーに処理分岐追加
-3. 実装メソッド追加
-4. テスト追加
+1. `servers/xxx_server.py`に`@mcp.tool`デコレータで関数追加
+2. 型ヒントとdocstringで自動的にスキーマ生成
+3. テスト追加
 
 **例**: Structure Serverに新しいツール追加
 
 ```python
 # servers/structure_server.py
 
-# 1. list_tools()に追加
-Tool(
-    name="new_analysis",
-    description="Perform new analysis",
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "pdb_file": {"type": "string"}
-        },
-        "required": ["pdb_file"]
-    }
-),
-
-# 2. call_tool()に追加
-elif name == "new_analysis":
-    result = await self.new_analysis(
-        pdb_file=arguments["pdb_file"]
-    )
-
-# 3. 実装メソッド追加
-async def new_analysis(self, pdb_file: str) -> dict:
-    """Perform new analysis"""
-    logger.info(f"Analyzing: {pdb_file}")
-    # 実装
-    return {"result": "success"}
-```
-
-### ワークフロー統合開発
-
-Planner/Validator/WorkflowEngineの実装手順：
-
-#### 1. Planner実装
-
-**目的**: 自然言語クエリからDAGワークフローを生成
-
-```python
-# core/planner.py
-from core.llm_client import LMStudioClient
-
-class MDWorkflowPlanner:
-    def __init__(self):
-        self.llm = LMStudioClient()
+@mcp.tool
+def analyze_structure(pdb_file: str, analysis_type: str = "basic") -> dict:
+    """Perform structure analysis
     
-    def plan_from_query(self, query: str) -> MDWorkflowPlan:
-        """自然言語クエリをワークフロープランに変換"""
-        # LLMで構造化プラン生成
-        plan = self.llm.complete_sync(
-            prompt=f"Generate MD workflow for: {query}",
-            system="You are an MD workflow planning expert..."
-        )
-        # DAG構築
-        return self.parse_to_dag(plan)
+    Args:
+        pdb_file: Input PDB file path
+        analysis_type: Type of analysis (basic, detailed, full)
+    
+    Returns:
+        Analysis results with metrics
+    """
+    logger.info(f"Analyzing {pdb_file}: {analysis_type}")
+    
+    if not Path(pdb_file).is_file():
+        raise FileNotFoundError(f"PDB file not found: {pdb_file}")
+    
+    # 解析実装
+    metrics = {
+        "num_atoms": count_atoms_in_pdb(pdb_file),
+        "chains": get_pdb_chains(pdb_file),
+        "analysis_type": analysis_type
+    }
+    
+    return {
+        "status": "success",
+        "metrics": metrics
+    }
 ```
 
-#### 2. Validator実装
-
-**目的**: 各ステップの出力検証とQCチェック
-
-```python
-# core/validator.py
-
-class MDWorkflowValidator:
-    async def validate_step(self, step_name: str, output: dict) -> ValidationResult:
-        """ステップ出力を検証"""
-        # 構造チェック
-        if "pdb_file" in output:
-            if not self._check_pdb_valid(output["pdb_file"]):
-                return ValidationResult(valid=False, error="Invalid PDB")
-        
-        # エネルギーチェック
-        if "energy" in output:
-            if output["energy"] > threshold:
-                return ValidationResult(valid=False, error="Energy too high")
-        
-        return ValidationResult(valid=True)
-```
-
-#### 3. WorkflowEngine実装
-
-**目的**: DAGを実行し、MCPサーバーを呼び出す
-
-```python
-# core/workflow.py
-
-class WorkflowEngine:
-    async def run_workflow(self, plan_file: str):
-        """ワークフロープランを実行"""
-        plan = self.load_plan(plan_file)
-        
-        # DAGトポロジカルソート
-        sorted_steps = self.topological_sort(plan.steps)
-        
-        for step in sorted_steps:
-            # MCPサーバー呼び出し
-            result = await self.call_mcp_tool(step)
-            
-            # 検証
-            validation = await self.validator.validate_step(
-                step.name, result
-            )
-            
-            if not validation.valid:
-                # 再試行またはエラー
-                await self.retry_step(step)
-```
-
-#### 4. main.pyコマンド実装
-
-```python
-# main.py
-
-@app.command()
-def run(
-    plan_file: str = typer.Argument(..., help="Workflow plan file"),
-):
-    """Run workflow from plan file"""
-    engine = WorkflowEngine()
-    asyncio.run(engine.run_workflow(plan_file))
-```
+**FastMCPの利点**:
+- 型ヒントから自動的にJSON Schemaを生成
+- docstringがツールの説明として使用される
+- デコレータベースのシンプルなAPI
 
 ### デバッグ方法
 
@@ -534,7 +451,7 @@ breakpoint()  # Python 3.7+
 
 ### プロジェクト詳細情報
 
-詳細なアーキテクチャ、Phase別実装状況、技術仕様は`ARCHITECTURE.md`を参照してください。
+詳細なアーキテクチャ、FastMCP統合の実装状況、技術仕様は`ARCHITECTURE.md`を参照してください。
 
 ## サポートされる力場
 
@@ -600,4 +517,3 @@ Issue、Pull Requestを歓迎します。
 ## サポート
 
 バグ報告や機能要望は、GitHubのIssueでお願いします。
-

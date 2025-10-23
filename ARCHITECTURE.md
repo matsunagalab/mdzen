@@ -41,40 +41,52 @@
   │   └─ User Preferences │  - 決定根拠ログ
   ├─ Policy               │
   │   └─ 自律サブルーチン   │
-  └─ MCP Client (Strands) ├─── [MCP Servers]
+  └─ FastMCP Client ──────├─── [FastMCP Servers] 🆕
                           │
-                          ├─ Structure MCP
-                          │   ├─ rcsb_fetch
-                          │   ├─ pdbfixer
-                          │   ├─ reduce
-                          │   └─ pdb2pqr+propka
+                          ├─ Structure Server
+                          │   ├─ fetch_pdb
+                          │   ├─ clean_structure
+                          │   ├─ add_hydrogens
+                          │   ├─ protonate_structure
+                          │   ├─ detect_modifications
+                          │   └─ validate_structure
                           │
-                          ├─ Genesis MCP 🆕
-                          │   └─ boltz2_protein_from_seq (FASTA→PDB)
+                          ├─ Genesis Server 🆕
+                          │   ├─ boltz2_protein_from_seq
+                          │   ├─ boltz2_protein_from_fasta
+                          │   └─ boltz2_multimer
                           │
-                          ├─ Complex MCP 🆕
-                          │   ├─ boltz2_complex (受容体+配位子→姿勢+親和性)
-                          │   └─ smina_dock (局所サーチ、堅牢化)
+                          ├─ Complex Server 🆕
+                          │   ├─ boltz2_complex
+                          │   ├─ boltz2_screen_ligands
+                          │   ├─ smina_dock
+                          │   └─ refine_poses
                           │
-                          ├─ Ligand MCP
-                          │   ├─ rdkit_build3d
-                          │   ├─ antechamber_gaff2_am1bcc
-                          │   └─ openff (将来)
+                          ├─ Ligand Server
+                          │   ├─ smiles_to_3d
+                          │   ├─ generate_gaff_params
+                          │   ├─ create_ligand_lib
+                          │   └─ parameterize_ligand_complete
                           │
-                          ├─ Assembly MCP
-                          │   ├─ parmed_merge
-                          │   ├─ tleap
-                          │   └─ packmol(-memgen)
+                          ├─ Assembly Server
+                          │   ├─ build_system_tleap
+                          │   ├─ build_membrane_system
+                          │   └─ build_mixed_solvent
                           │
-                          ├─ Export MCP
-                          │   ├─ amber_export (prmtop/inpcrd)
-                          │   ├─ gromacs_export (ParmEd)
-                          │   └─ openmm_export (XML)
+                          ├─ Export Server
+                          │   ├─ export_amber
+                          │   ├─ export_gromacs
+                          │   ├─ export_openmm
+                          │   ├─ package_system
+                          │   └─ convert_format
                           │
-                          └─ QC/Min MCP 🆕
+                          └─ QC/Min Server 🆕
                               ├─ openmm_minimize
-                              ├─ posebusters_check
-                              └─ clash_check
+                              ├─ clash_check
+                              ├─ bond_check
+                              ├─ chirality_check
+                              ├─ run_full_qc
+                              └─ posebusters_check
 
     ↓
 [Persistent Storage]
@@ -84,6 +96,15 @@
       ├─ qc_report.json   (PoseBusters, 最小化指標)
       └─ metadata.json    (seed, hash, 再現用)
 ```
+
+### FastMCP統合の特徴
+
+- **モジュラー設計**: 各サーバーファイルが完全に独立して動作可能
+- **自動スキーマ生成**: 型ヒントとdocstringから自動的にMCPツールスキーマを生成
+- **標準準拠**: MCP標準プロトコルに完全準拠
+- **開発効率**: デコレータベースのシンプルなAPI（`@mcp.tool`）
+- **独立実行**: 各サーバーが `python -m servers.{server_name}` で単独起動可能
+- **共通ライブラリ**: `common/` モジュールで外部ツール実行とユーティリティを共有
 
 ### ハイブリッド設計の核心
 
@@ -393,56 +414,107 @@ c) Boltz-2の設定変更（MSA使用、top_k=10）
 
 ---
 
-## 7. 現在の実装状況
+## 7. 現在の実装状況（FastMCP統合完了）
 
-### 実装済み（Phase 1-6 servers）✅
+### 実装済み（7 FastMCP Servers）✅
 
 | Component | Status | 主要機能 |
 |-----------|--------|---------|
-| Structure Server | ✅ | PDB取得、PDBFixer、PDB2PQR、Boltz-2統合（一部） |
+| Structure Server | ✅ | PDB取得、PDBFixer、PDB2PQR、構造検証 |
+| Genesis Server | ✅ 🆕 | Boltz-2タンパク質生成（FASTA→PDB、マルチマー） |
+| Complex Server | ✅ 🆕 | Boltz-2複合体予測、Sminaドッキング、ポーズ精密化 |
 | Ligand Server | ✅ | RDKit 3D生成、AmberTools GAFF2/AM1-BCC |
-| Docking Server | ✅ | Smina分子ドッキング |
-| Assembly Server | ✅ | tleap系構築、Packmol-Memgen |
-| Protocol Server | ✅ | OpenMM MDスクリプト生成 |
-| Export Server | ✅ | ParmEd形式変換、パッケージング |
+| Assembly Server | ✅ | tleap系構築、Packmol-Memgen膜系 |
+| Export Server | ✅ | Amber/GROMACS/OpenMM形式変換、パッケージング |
+| QC/Min Server | ✅ 🆕 | OpenMM最小化、衝突検出、結合長・キラリティチェック |
 
-### 未実装（要リファクタリング）❌
+### FastMCP統合アーキテクチャ
 
-| Component | Status | 新設計での役割 |
-|-----------|--------|---------------|
-| Genesis Server | ❌ | 新規作成（Boltz-2 protein from seq） |
-| Complex Server | ❌ | 新規作成（Boltz-2複合体 + Smina統合） |
-| QC/Min Server | ❌ | 新規作成（PoseBusters、OpenMM最小化） |
-| Strands Agent | ❌ | 統合エージェント（Planner+Policy+Memory） |
-| Planner | ⚠️ | 骨格のみ → Strands統合で再設計 |
-| Validator | ⚠️ | 骨格のみ → QC/Min Serverに統合 |
-| WorkflowEngine | ⚠️ | 骨格のみ → Strands Agentに置き換え |
-
-### リファクタリング方針
-
-#### 1. MCPサーバーの再編成
+#### 1. ディレクトリ構造
 ```
-旧: 6サーバー（Phase 1-6）
-↓
-新: 7サーバー（機能別）
-  - Structure MCP（既存、軽微な修正）
-  - Genesis MCP（新規）
-  - Complex MCP（新規）
-  - Ligand MCP（既存、そのまま）
-  - Assembly MCP（既存、そのまま）
-  - Export MCP（既存、そのまま）
-  - QC/Min MCP（新規）
+mcp-md/
+├── common/              # 共通ライブラリ（新規）
+│   ├── __init__.py
+│   ├── base.py         # BaseToolWrapper
+│   └── utils.py        # 共通ユーティリティ
+├── servers/            # FastMCPサーバー（7ファイル）
+│   ├── __init__.py
+│   ├── structure_server.py
+│   ├── genesis_server.py
+│   ├── complex_server.py
+│   ├── ligand_server.py
+│   ├── assembly_server.py
+│   ├── export_server.py
+│   └── qc_min_server.py
+├── core/               # エージェント実装
+│   ├── strands_agent.py    # FastMCP Client統合
+│   ├── workflow_skeleton.py
+│   ├── decision_logger.py
+│   └── models.py
+└── pyproject.toml      # fastmcp>=0.1.0追加
 ```
 
-#### 2. core/の再設計
+#### 2. FastMCP統合の実装パターン
+
+各サーバーは以下の標準パターンで実装：
+
+```python
+from fastmcp import FastMCP
+from common.base import BaseToolWrapper
+from common.utils import setup_logger, ensure_directory
+
+logger = setup_logger(__name__)
+mcp = FastMCP("Server Name")
+
+# 外部ツールラッパー初期化
+tool_wrapper = BaseToolWrapper("tool_name", conda_env="mcp-md")
+
+@mcp.tool
+def tool_name(param1: str, param2: int = 0) -> dict:
+    """Tool description
+    
+    Args:
+        param1: Parameter description
+        param2: Optional parameter
+    
+    Returns:
+        Result dictionary
+    """
+    # 実装コード
+    return result
+
+if __name__ == "__main__":
+    mcp.run()  # STDIO transport (default)
 ```
-旧: planner.py, validator.py, workflow.py（独自実装）
-↓
-新: strands_agent.py（Strands Agents統合）
-  - Strandsのエージェント機能を活用
-  - MCPクライアントはStrandsが提供
-  - 意思決定ロジックのみ実装
+
+#### 3. Strands Agent → FastMCP Client統合
+
+```python
+from fastmcp import Client
+
+# MCP設定（標準フォーマット）
+mcp_config = {
+    "mcpServers": {
+        "structure": {
+            "command": "python",
+            "args": ["-m", "servers.structure_server"]
+        },
+        # ... 他のサーバー
+    }
+}
+
+# FastMCP Clientで全サーバーに接続
+async with Client(mcp_config) as client:
+    tools = await client.list_tools()
+    agent = Agent(model=model, tools=tools)
+    response = await agent(user_query)
 ```
+
+### 削除されたファイル（FastMCPに置き換え）
+
+- ~~`tools/`~~ ディレクトリ全体（10ファイル） → `common/`に統合
+- ~~`servers/base_server.py`~~ → FastMCP標準機能で代替
+- ~~`servers/archive/`~~ → 旧実装削除
 
 ---
 

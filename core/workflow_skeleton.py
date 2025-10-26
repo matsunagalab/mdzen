@@ -32,46 +32,48 @@ WORKFLOW_SKELETON = [
         name="repair_protonate",
         description="Repair structure and add protonation",
         required_tools=["clean_structure", "protonate_structure"],
-        optional_tools=["detect_modifications", "boltz2_complete_missing"]
+        optional_tools=["detect_modifications", "add_hydrogens", "validate_structure"]
     ),
     WorkflowStep(
         name="ligand_param",
         description="Parameterize ligands",
-        required_tools=["rdkit_build3d", "antechamber_gaff2_am1bcc"],
+        required_tools=["smiles_to_3d", "generate_gaff_params"],
+        optional_tools=["parameterize_ligand_complete"]
     ),
     WorkflowStep(
         name="complex_generation",
         description="Generate protein-ligand complex",
-        required_tools=["boltz2_complex", "smina_refine"],
-        optional_tools=["screen_ligands"]
+        required_tools=["boltz2_complex"],
+        optional_tools=["smina_dock", "refine_poses", "boltz2_screen_ligands"]
     ),
     WorkflowStep(
         name="assemble",
         description="Assemble system with tleap",
-        required_tools=["parmed_merge", "tleap_assemble"],
+        required_tools=["build_system_tleap"],
+        optional_tools=["build_membrane_system", "build_mixed_solvent"]
     ),
     WorkflowStep(
         name="solvate_ions",
         description="Add solvent and ions",
-        required_tools=["tleap_solvate", "tleap_add_ions"],
-        optional_tools=["packmol_build", "packmol_memgen"]
+        required_tools=["build_system_tleap"],
+        optional_tools=["build_membrane_system"]
     ),
     WorkflowStep(
         name="export",
         description="Export to target MD format",
-        required_tools=["amber_export"],
-        optional_tools=["gromacs_export", "openmm_export", "package_files"]
+        required_tools=["export_amber"],
+        optional_tools=["export_gromacs", "export_openmm", "package_system", "convert_format"]
     ),
     WorkflowStep(
         name="minimize_qc",
         description="Minimize and quality check",
-        required_tools=["molprobity_check", "openmm_minimize"],
-        optional_tools=["qc_report"]
+        required_tools=["openmm_minimize", "clash_check"],
+        optional_tools=["bond_check", "chirality_check", "run_full_qc", "posebusters_check"]
     ),
     WorkflowStep(
         name="package",
         description="Package final outputs",
-        required_tools=["package_files"],
+        required_tools=["package_system"],
     ),
 ]
 

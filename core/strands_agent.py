@@ -2,7 +2,7 @@
 Strands Agent - Core workflow orchestrator with LM Studio integration.
 
 Provides:
-- MCP client management for all servers
+- MCP client management for all servers (FastMCP)
 - Interactive CLI interface
 - Workflow orchestration
 - Decision logging
@@ -14,15 +14,14 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 try:
-    from mcp import StdioServerParameters, stdio_client
+    from fastmcp import Client
     from strands import Agent
     from strands.models.openai import OpenAIModel
-    from strands.tools.mcp import MCPClient
     from prompt_toolkit import prompt
 except ImportError as e:
     raise ImportError(
         f"Required packages not installed: {e}\n"
-        "Install with: pip install strands-ai prompt-toolkit mcp"
+        "Install with: pip install fastmcp strands-ai prompt-toolkit"
     )
 
 from .utils import setup_logger
@@ -79,57 +78,49 @@ class MDWorkflowAgent:
             model_id=self.model_id,
         )
         
-        # MCP clients
-        self.mcp_clients = self._create_mcp_clients()
+        # MCP configuration for FastMCP Client
+        self.mcp_config = self._create_mcp_config()
         
         logger.info("MD Workflow Agent initialized")
     
-    def _create_mcp_clients(self) -> Dict[str, MCPClient]:
-        """Create MCP clients for all servers"""
-        conda_env = os.getenv("CONDA_DEFAULT_ENV", "mcp-md")
+    def _create_mcp_config(self) -> Dict[str, Any]:
+        """Create MCP configuration for FastMCP Client"""
         
-        servers = [
-            "structure_server",
-            "genesis_server",
-            "complex_server",
-            "ligand_server",
-            "assembly_server",
-            "export_server",
-            "qc_min_server",
-        ]
+        # Get Python executable path
+        import sys
+        python_exe = sys.executable
         
-        clients = {}
-        for server_name in servers:
-            logger.info(f"Creating MCP client for {server_name}")
-            clients[server_name] = MCPClient(
-                lambda s=server_name: stdio_client(
-                    StdioServerParameters(
-                        command="conda",
-                        args=["run", "-n", conda_env, "python", "-m", f"servers.{s}"],
-                    )
-                )
-            )
+        # Server list
+        servers = {
+            "structure": "structure_server",
+            "genesis": "genesis_server",
+            "complex": "complex_server",
+            "ligand": "ligand_server",
+            "assembly": "assembly_server",
+            "export": "export_server",
+            "qc_min": "qc_min_server",
+        }
         
-        return clients
+        # Build MCP configuration
+        mcp_servers = {}
+        for name, module in servers.items():
+            mcp_servers[name] = {
+                "command": python_exe,
+                "args": ["-m", f"servers.{module}"]
+            }
+            logger.info(f"Configured MCP server: {name}")
+        
+        return {"mcpServers": mcp_servers}
     
-    def run_interactive(self):
-        """Run interactive CLI"""
+    async def run_interactive_async(self):
+        """Run interactive CLI (async)"""
         logger.info("Starting interactive CLI")
         
-        # Enter MCP client context
-        clients_list = list(self.mcp_clients.values())
-        
-        with clients_list[0], clients_list[1], clients_list[2], clients_list[3], \
-             clients_list[4], clients_list[5], clients_list[6]:
-            
-            # Collect all tools from all servers
-            tools = []
-            for server_name, client in self.mcp_clients.items():
-                logger.info(f"Loading tools from {server_name}")
-                server_tools = client.list_tools_sync()
-                tools.extend(server_tools)
-                logger.info(f"  Loaded {len(server_tools)} tools")
-            
+        # Connect to all MCP servers using FastMCP Client
+        async with Client(self.mcp_config) as client:
+            # List all available tools
+            logger.info("Loading tools from all MCP servers")
+            tools = await client.list_tools()
             logger.info(f"Total tools available: {len(tools)}")
             
             # Create Strands agent
@@ -137,10 +128,11 @@ class MDWorkflowAgent:
             
             # Print banner
             print("=" * 60)
-            print("MD Workflow Agent")
+            print("MD Workflow Agent (FastMCP)")
             print(f"LM Studio: {self.lm_studio_url}")
             print(f"Model: {self.model_id}")
             print(f"Run directory: {self.run_dir}")
+            print(f"MCP Servers: {len(self.mcp_config['mcpServers'])}")
             print("=" * 60)
             print("Type your query or 'exit' to quit")
             print()
@@ -166,7 +158,7 @@ class MDWorkflowAgent:
                     )
                     
                     # Agent processes query
-                    response = agent(user_input)
+                    response = await agent(user_input)
                     print()
                     
                 except KeyboardInterrupt:
@@ -176,6 +168,11 @@ class MDWorkflowAgent:
                     logger.error(f"Error: {e}")
                     print(f"Error: {e}")
                     continue
+    
+    def run_interactive(self):
+        """Run interactive CLI (sync wrapper)"""
+        import asyncio
+        asyncio.run(self.run_interactive_async())
     
     def run_workflow_from_plan(self, plan_file: str):
         """Run workflow from a plan file

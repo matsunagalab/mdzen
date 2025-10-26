@@ -6,9 +6,70 @@ import logging
 import subprocess
 from pathlib import Path
 from typing import Optional, Union, List
-from core.utils import run_command, check_external_tool
 
 logger = logging.getLogger(__name__)
+
+
+def run_command(
+    cmd: list[str],
+    cwd: Optional[Union[str, Path]] = None,
+    timeout: Optional[int] = None,
+    capture_output: bool = True
+) -> subprocess.CompletedProcess:
+    """Run external command
+    
+    Args:
+        cmd: Command and arguments list
+        cwd: Working directory
+        timeout: Timeout in seconds
+        capture_output: Capture output
+    
+    Returns:
+        CompletedProcess object
+    
+    Raises:
+        subprocess.CalledProcessError: Command failed
+        subprocess.TimeoutExpired: Timeout
+    """
+    logger.debug(f"Running command: {' '.join(cmd)}")
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=capture_output,
+            text=True,
+            timeout=timeout,
+            check=True
+        )
+        logger.debug(f"Command completed successfully")
+        return result
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Command failed: {e.stderr}")
+        raise
+    except subprocess.TimeoutExpired as e:
+        logger.error(f"Command timed out after {timeout}s")
+        raise
+
+
+def check_external_tool(tool_name: str) -> bool:
+    """Check if external tool is available
+    
+    Args:
+        tool_name: Tool name (command name)
+    
+    Returns:
+        True if tool is available in PATH
+    """
+    try:
+        result = subprocess.run(
+            ['which', tool_name],
+            capture_output=True,
+            text=True
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
 
 
 class BaseToolWrapper:

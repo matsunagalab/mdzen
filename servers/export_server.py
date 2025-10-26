@@ -13,7 +13,10 @@ import zipfile
 from pathlib import Path
 from typing import List, Optional
 from fastmcp import FastMCP
+import openmm as mm
 
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(__file__))) 
 from common.utils import setup_logger, ensure_directory
 
 logger = setup_logger(__name__)
@@ -172,7 +175,9 @@ def export_openmm(
     output_pdb = output_dir / f"{output_name}.pdb"
     
     logger.info("Converting to OpenMM XML format")
-    amber.save(str(output_xml), overwrite=True)
+    system = amber.createSystem()  # OpenMMのsystemオブジェクトを生成
+    with open(str(output_xml), 'w') as f:
+        f.write(mm.openmm.XmlSerializer.serialize(system))
     amber.save(str(output_pdb), overwrite=True)
     
     logger.info(f"Exported OpenMM files to {output_dir}")

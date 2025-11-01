@@ -28,6 +28,8 @@ dependencies = [
     "langgraph>=0.2.0",
     "langchain-mcp-adapters>=0.1.0",
     "prompt-toolkit>=3.0.0",
+    "langgraph-checkpoint-sqlite", 
+    "langchain-openai>=0.2.0",
     
     # Data models & validation
     "pydantic>=2.12.3",
@@ -46,7 +48,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-openai = ["langchain-openai>=0.2.0"]
 anthropic = ["langchain-anthropic>=0.3.0"]
 dev = [
     "pytest>=7.4.0",

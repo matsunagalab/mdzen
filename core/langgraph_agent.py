@@ -310,7 +310,15 @@ class MDWorkflowAgent:
     
     def run_interactive(self):
         """Run interactive CLI (sync wrapper)"""
-        asyncio.run(self.run_interactive_async())
+        try:
+            # Check if there's already a running event loop
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No event loop is running, create a new one
+            asyncio.run(self.run_interactive_async())
+        else:
+            # Already in an event loop, use it directly
+            loop.create_task(self.run_interactive_async())
     
     async def run_workflow_with_llm_planning(self, query: str) -> Dict[str, Any]:
         """Run workflow with LLM-based planning

@@ -33,6 +33,7 @@ CHARMM-GUIに代わる、お手軽でフレクシブルなMD入力ファイル�
 - Python 3.11以上
 - [conda](https://docs.conda.io/en/latest/) または [mamba](https://mamba.readthedocs.io/) (推奨)
 - [LM Studio](https://lmstudio.ai/) (ローカルLLM実行)
+- [Node.js](https://nodejs.org/) (MCP Inspector用、オプション)
 - GPU推奨（Boltz-2、OpenMM高速化）
 - （オプション）[uv](https://github.com/astral-sh/uv) - 高速なPythonパッケージマネージャー
 
@@ -154,6 +155,30 @@ uv run python -m servers.qc_min_server
 ```
 
 > **重要**: サーバー起動前に必ず`conda activate mcp-md`で環境を有効化してください。
+
+### MCP Inspectorでデバッグ（開発用）
+
+MCP Inspectorを使うと、各サーバーのツールをWebインターフェースでテストできます：
+
+```bash
+# conda環境をアクティベート
+conda activate mcp-md
+
+# MCP Inspector起動（Structure Serverを例に）
+npx @modelcontextprotocol/inspector uv run python -m servers.structure_server
+
+# 別のサーバーをテストする場合
+npx @modelcontextprotocol/inspector uv run python -m servers.genesis_server
+npx @modelcontextprotocol/inspector uv run python -m servers.complex_server
+```
+
+ブラウザが自動的に開き、以下が可能：
+- 利用可能なツール一覧の表示
+- 各ツールのスキーマ確認
+- パラメータを入力してツールを実行
+- レスポンスの確認
+
+> **ヒント**: MCP Inspectorは初回実行時に自動的にインストールされます（Node.js/npxが必要）。
 
 ### ワークフロー例
 

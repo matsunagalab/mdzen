@@ -160,6 +160,8 @@ uv run python -m servers.qc_min_server
 
 MCP Inspectorを使うと、各サーバーのツールをWebインターフェースでテストできます：
 
+#### 方法1: npx経由（インストール不要、推奨）
+
 ```bash
 # conda環境をアクティベート
 conda activate mcp-md
@@ -172,13 +174,25 @@ npx @modelcontextprotocol/inspector uv run python -m servers.genesis_server
 npx @modelcontextprotocol/inspector uv run python -m servers.complex_server
 ```
 
+#### 方法2: グローバルインストール（より簡潔）
+
+```bash
+# MCP Inspectorをグローバルインストール（初回のみ）
+npm install -g @modelcontextprotocol/inspector
+
+# 以降は短いコマンドで起動可能
+conda activate mcp-md
+mcp-inspector uv run python -m servers.structure_server
+mcp-inspector uv run python -m servers.genesis_server
+```
+
 ブラウザが自動的に開き、以下が可能：
 - 利用可能なツール一覧の表示
 - 各ツールのスキーマ確認
 - パラメータを入力してツールを実行
 - レスポンスの確認
 
-> **ヒント**: MCP Inspectorは初回実行時に自動的にインストールされます（Node.js/npxが必要）。
+> **ヒント**: Node.js/npmが必要です。方法1は初回実行時に自動インストールされます。
 
 ### ワークフロー例
 

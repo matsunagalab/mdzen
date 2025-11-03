@@ -13,7 +13,7 @@ import datetime
 import string
 from pathlib import Path
 from typing import List, Dict, Any
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 from common.utils import setup_logger, ensure_directory
 from common.base import BaseToolWrapper

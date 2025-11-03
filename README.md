@@ -25,6 +25,10 @@ CHARMM-GUIに代わる、お手軽でフレクシブルなMD入力ファイル�
 ## 📚 ドキュメント
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - プロジェクト全体のアーキテクチャ・実装プラン・技術仕様
+- **[AGENTS.md](AGENTS.md)** - Cursor AI Agent設定とガイドライン
+- **[.cursor/rules/](.cursor/rules/)** - プロジェクトルールと開発ワークフロー
+  - **[project-rules.md](.cursor/rules/project-rules.md)** - プロジェクト全体のルール
+  - **[notebook-development.md](.cursor/rules/notebook-development.md)** - Notebook開発ルール
 
 ## セットアップ
 
@@ -241,8 +245,13 @@ mcp-md/
 ├── checkpoints/          # LangGraphチェックポイント
 │   └── workflow.db      # SQLiteステート保存
 ├── tests/                # テストコード
+├── .cursor/              # Cursorプロジェクト設定
+│   └── rules/           # プロジェクトルール
+│       ├── project-rules.md         # プロジェクト全体のルール
+│       └── notebook-development.md  # Notebook開発ルール
 ├── pyproject.toml        # プロジェクト設定（langchain統合）
 ├── ARCHITECTURE.md       # 詳細アーキテクチャ・技術仕様
+├── AGENTS.md             # Cursor AI Agent設定
 └── README.md             # このファイル
 ```
 

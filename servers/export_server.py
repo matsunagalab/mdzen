@@ -12,7 +12,7 @@ import logging
 import zipfile
 from pathlib import Path
 from typing import List, Optional
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 import openmm as mm
 
 import sys, os

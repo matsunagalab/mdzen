@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Optional
 from pdbfixer import PDBFixer
 from openmm.app import PDBFile
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
+import tempfile
 
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__))) 
@@ -345,6 +346,110 @@ def validate_structure(pdb_file: str) -> dict:
     
     return validation
 
+@mcp.tool()
+def create_mutated_structutre(input_pdb: str, mutation_indices: str, mutation_residues: str, name :str='mutated') -> dict:
+    '''Create a mutated protein structure using FASPR
+
+    Args:
+        input_pdb: Input PDB file path
+        mutation_indices: Indices of residues to mutate, separated by commas.
+        mutation_residues: One-letter representation of the residues to be mutated, separated by commas.
+
+    Return:
+        output_file: Path to PDB file of mutated protein
+    
+    '''
+    output_file = WORKING_DIR / f"{name}.pdb"
+
+    # get the sequence from pdb
+    sequence = pdb_to_sequence(input_pdb)
+
+    # make a mutation dictionary
+    mutation_dict = create_mutation_dict(mutation_indices, mutation_residues)
+
+    mutated_sequence = sequence.copy()
+
+    # make mutated sequence
+    for key in mutation_dict:
+        mutated_sequence[key-1] = mutation_dict[key]
+
+    # genarate mutated pdb
+    mutate_pdb = generate_structure(sequence, mutated_sequence, input_pdb)
+
+    fixer = PDBFixer(mutate_pdb)
+
+    # save
+    with open(output_file, 'w') as f:
+        PDBFile.writeFile(fixer.topology, fixer.positions, f)
+
+    return {'output_file': output_file}
+
+    
+def pdb_to_sequence(input_pdb: str) -> list:
+    '''
+    Make a one-letter sequence from pdb file
+    '''
+    amino_acid_code = {  #  dictionary of amino acid
+        'ASP': 'D', 'GLU': 'E', 'CYS': 'C', 'ASN': 'N', 
+        'PHE': 'F', 'GLN': 'Q', 'TYR': 'Y', 'SER': 'S', 
+        'MET': 'M', 'TRP': 'W', 'VAL': 'V', 'GLY': 'G',
+        'LEU': 'L', 'ALA': 'A', 'ILE': 'I', 'THR': 'T',
+        'PRO': 'P', 'HIS': 'H', 'LYS': 'K', 'ARG': 'R'
+    }
+
+    sequence = []
+    with open(input_pdb, 'r') as f:  #get amino acid sequence
+        for line in f:
+            args = line.split()
+            
+            if args[0] != 'ATOM':
+                continue
+            if args[2] != 'CA':
+                continue
+            
+            sequence.append(amino_acid_code[args[3]])
+
+    return sequence
+
+def create_mutation_dict(mutation_indices: str, mutation_residues: str) -> dict:
+    # インデックスと残基の数の整合チェック入れる
+    mutation_dict = {}
+    indice_list = []
+    residue_list = []
+    if len(mutation_indices) > 1:
+        for indice in mutation_indices.split(','):
+            indice_list.append(int(indice))
+        residue_list = mutation_residues.split(',')
+    else:
+        indice_list.append(int(mutation_indices))
+        residue_list.append(mutation_residues)
+
+
+    for indice, residue in zip(indice_list, residue_list):
+        mutation_dict[indice] = residue
+
+    return mutation_dict
+
+def generate_structure(sequence: str, mutated_sequence: str, input_pdb: str) -> str:
+    FASPR_BIN = "/Users/hom/mcp_server_example/FASPR/FASPR"  # FASPR 実行ファイル
+
+    tmpdir = tempfile.mkdtemp(prefix='mcp_faspr')
+    sequence_file = os.path.join(tmpdir, 'sequence.txt')
+    pdb_output = os.path.join(tmpdir, 'mutated.pdb')
+    
+    faspr_sequence = []
+    for wild, mutate in zip(sequence, mutated_sequence):
+        faspr_sequence.append(mutate if mutate != wild else mutate.lower())
+
+    with open(sequence_file, 'w') as f:
+        f.write(''.join(faspr_sequence))
+    
+    cmd = f'{FASPR_BIN} -i {input_pdb} -o {pdb_output} -s {sequence_file}'
+    os.system(cmd)
+    if not os.path.isfile(pdb_output):
+        # FASPRが成功終了でも出力が生成されない場合の保険
+        raise RuntimeError("FASPR did not produce the expected output PDB.")
+    return pdb_output
 
 if __name__ == "__main__":
     mcp.run()

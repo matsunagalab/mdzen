@@ -361,19 +361,24 @@ def create_mutated_structutre(input_pdb: str, mutation_indices: str, mutation_re
     '''
     output_file = WORKING_DIR / f"{name}.pdb"
 
+    # get the sequence from pdb
     sequence = pdb_to_sequence(input_pdb)
 
+    # make a mutation dictionary
     mutation_dict = create_mutation_dict(mutation_indices, mutation_residues)
 
     mutated_sequence = sequence.copy()
 
+    # make mutated sequence
     for key in mutation_dict:
         mutated_sequence[key-1] = mutation_dict[key]
 
+    # genarate mutated pdb
     mutate_pdb = generate_structure(sequence, mutated_sequence, input_pdb)
 
     fixer = PDBFixer(mutate_pdb)
 
+    # save
     with open(output_file, 'w') as f:
         PDBFile.writeFile(fixer.topology, fixer.positions, f)
 
@@ -407,6 +412,7 @@ def pdb_to_sequence(input_pdb: str) -> list:
     return sequence
 
 def create_mutation_dict(mutation_indices: str, mutation_residues: str) -> dict:
+    # インデックスと残基の数の整合チェック入れる
     mutation_dict = {}
     indice_list = []
     residue_list = []

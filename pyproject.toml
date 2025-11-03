@@ -10,20 +10,20 @@ dependencies = [
     "mcp[cli]>=1.18.0",
     
     # Structure prediction & modeling
-    "boltz>=2.0.0",
-    "openmm>=8.3.1",
-    "mdanalysis>=2.10.0",
+    # Note: Install openmm, rdkit, mdanalysis, biopython, pandas, numpy, scipy, pdbfixer via conda first
+    # conda install -c conda-forge openmm rdkit mdanalysis biopython pandas numpy scipy openblas pdbfixer
+    # Boltz-2: Install manually when needed (Phase 2-3)
+    #   pip install 'boltz[cuda]' --no-deps
+    #   Then install missing dependencies individually if needed
     "pdb2pqr>=3.1.0",
     "propka>=3.5.0",
-    
-    # Ligand processing
-    "rdkit>=2023.9.1",
     
     # Topology manipulation
     "parmed>=4.3.0",
     
     # LLM integration (LM Studio) & LangChain
     "openai>=1.0.0",
+    "langchain>=1.0.0",
     "langchain-core>=1.0.0",
     "langgraph>=0.2.0",
     "langchain-mcp-adapters>=0.1.0",
@@ -41,9 +41,6 @@ dependencies = [
     # Utilities
     "httpx>=0.28.1",
     "requests>=2.31.0",
-    "biopython>=1.83",
-    "numpy>=1.24.0",
-    "pandas>=2.0.0",
     "pyyaml>=6.0",
     
     # Notebook development
@@ -53,6 +50,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Heavy dependencies (install via conda)
+heavy = [
+    "openmm>=8.3.1",
+    "mdanalysis>=2.10.0",
+    "rdkit>=2023.9.1",
+    "biopython>=1.83",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+]
 anthropic = ["langchain-anthropic>=0.3.0"]
 dev = [
     "pytest>=7.4.0",

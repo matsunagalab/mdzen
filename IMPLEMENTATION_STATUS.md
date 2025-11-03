@@ -91,14 +91,25 @@ src/mcp_md/
 ### 環境構築
 
 ```bash
-# 1. 依存関係のインストール
+# 1. conda環境の作成（初回のみ）
+conda create -n mcp-md python=3.11
+conda activate mcp-md
+
+# 2. 科学計算パッケージのインストール
+conda install -c conda-forge openmm rdkit mdanalysis biopython pandas numpy scipy openblas pdbfixer
+conda install -c conda-forge ambertools packmol smina
+
+# 3. プロジェクトのクローンとインストール
 cd /Users/yasu/tmp/mcp-md
-uv sync
+pip install -e .
 
-# 2. Jupyter Notebookの起動
-uv run jupyter notebook
+# 4. Notebook開発用パッケージ（既に pyproject.toml に含まれている場合は不要）
+pip install jupyter rich
 
-# 3. ブラウザで notebooks/ を開く
+# 5. Jupyter Notebookの起動
+jupyter notebook
+
+# 6. ブラウザで notebooks/ を開く
 ```
 
 ### 実装順序（推奨）

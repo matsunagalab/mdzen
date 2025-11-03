@@ -42,7 +42,7 @@ def chat(
     except ImportError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         console.print("\nInstall required packages:")
-        console.print("  uv pip install -e \".[openai]\"")
+        console.print("  pip install -e \".[openai]\"")
         raise typer.Exit(1)
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")

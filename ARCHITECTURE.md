@@ -1538,7 +1538,7 @@ mcp-md/
 │       ├── qc_report.json        # Phase 3検証結果
 │       └── metadata.json         # 再現性情報
 │
-├── pyproject.toml                # 依存関係（uv管理）
+├── pyproject.toml                # 依存関係（pip管理）
 ├── README.md                     # プロジェクト説明
 ├── ARCHITECTURE.md               # このファイル
 ├── AGENTS.md                     # Cursor AI Agent設定
@@ -1847,7 +1847,7 @@ async def create_workflow_graph():
 
 ## 9. 外部ツール依存関係
 
-### 環境セットアップ（推奨: conda + uv）
+### 環境セットアップ（conda + pip）
 
 #### 1. conda環境作成と科学計算ツールのインストール
 
@@ -1856,79 +1856,132 @@ async def create_workflow_graph():
 conda create -n mcp-md python=3.11
 conda activate mcp-md
 
-# 科学計算ツール（conda-forge推奨）
-conda install -c conda-forge ambertools packmol smina pdbfixer
+# 科学計算パッケージをインストール
+conda install -c conda-forge openmm rdkit mdanalysis biopython pandas numpy scipy openblas pdbfixer
 
-# uvのインストール（conda環境内）
-pip install uv
+# MD準備ツール
+conda install -c conda-forge ambertools packmol smina
 ```
 
-#### 2. conda環境内でuvを使ってPythonパッケージをインストール
+#### 2. Pythonパッケージのインストール
 
 ```bash
 # conda環境がアクティブな状態で実行
 conda activate mcp-md
 
-# 基本依存関係のインストール（conda環境に直接インストール）
-uv pip install -e .
-
-# または、pyproject.tomlから直接インストール
-uv pip install --project pyproject.toml
+# プロジェクトをeditable modeでインストール
+pip install -e .
 
 # 特定のLLMプロバイダーも含める場合
-uv pip install -e ".[openai]"      # OpenAI/LM Studio
-uv pip install -e ".[anthropic]"   # Claude
-uv pip install -e ".[google]"      # Gemini
+pip install -e ".[openai]"      # OpenAI/LM Studio
+pip install -e ".[anthropic]"   # Claude
 
-# 全てのオプション依存関係
-uv pip install -e ".[openai,anthropic,google,dev]"
+# 開発用パッケージ
+pip install -e ".[dev]"
 ```
 
-#### 3. 実行方法
+#### 3. Boltz-2のインストール（オプション）
+
+Boltz-2はPhase 2-3で使用します。必要になったときにインストール：
+
+```bash
+# 依存関係を無視してインストール（既存のscipyを使用）
+pip install 'boltz[cuda]' --no-deps
+
+# その後、不足している依存関係を個別にインストール
+pip install torch hydra-core pytorch-lightning einops einx mashumaro modelcif wandb
+
+# または、scipyをダウングレードしてから通常インストール
+conda install -c conda-forge scipy=1.13.1
+pip install 'boltz[cuda]'
+```
+
+#### 4. 実行方法
 
 ```bash
 # conda環境がアクティブな状態で
 conda activate mcp-md
 
-# uv runを使って実行（高速起動）
-uv run python main.py
-
-# またはMCPサーバーの起動
-uv run python -m servers.structure_server
-
-# LangGraphワークフローの実行
-uv run python -m core.workflow_graph
-
-# 通常のpythonコマンドも使用可能
+# Pythonスクリプト実行
 python main.py
+
+# MCPサーバーの起動
+python -m servers.structure_server
+
+# テストスクリプト実行
+python test_clarification.py
+
+# Jupyter Notebook起動
+jupyter notebook
 ```
 
-#### 4. pyproject.toml設定例
+#### 5. pyproject.toml設定例
 
 ```toml
 [project]
 name = "mcp-md"
 version = "0.1.0"
-description = "Amber-focused MD setup with LangGraph + MCP"
+description = "MD入力ファイル生成AIエージェント"
 requires-python = ">=3.11"
 dependencies = [
-    "boltz>=2.0.0",
+    # MCP Server (FastMCP)
+    "fastmcp>=0.1.0",
+    "mcp[cli]>=1.18.0",
+    
+    # Structure prediction & modeling
+    # Note: Install openmm, rdkit, mdanalysis, biopython, pandas, numpy, scipy, pdbfixer via conda
+    # conda install -c conda-forge openmm rdkit mdanalysis biopython pandas numpy scipy openblas pdbfixer
     "pdb2pqr>=3.1.0",
     "propka>=3.5.0",
-    "rdkit>=2023.9.1",
-    "openmm>=8.3.1",
+    
+    # Topology manipulation
     "parmed>=4.3.0",
-    "fastmcp>=0.1.0",
+    
+    # LLM integration & LangChain
+    "openai>=1.0.0",
+    "langchain>=1.0.0",
     "langchain-core>=1.0.0",
     "langgraph>=0.2.0",
-    "langchain-mcp-adapters>=0.1.0",  # MCP統合
+    "langchain-mcp-adapters>=0.1.0",
+    "langchain-openai>=0.2.0",
+    "langgraph-checkpoint-sqlite",
+    
+    # Data models & validation
+    "pydantic>=2.12.3",
+    
+    # CLI & UI
+    "typer>=0.19.2",
+    "rich>=14.2.0",
+    
+    # Utilities
+    "httpx>=0.28.1",
+    "requests>=2.31.0",
+    "pyyaml>=6.0",
+    
+    # Notebook development
+    "jupyter>=1.0.0",
+    "ipykernel>=6.29.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
-openai = ["langchain-openai>=0.2.0"]
+# Heavy dependencies (install via conda)
+heavy = [
+    "openmm>=8.3.1",
+    "mdanalysis>=2.10.0",
+    "rdkit>=2023.9.1",
+    "biopython>=1.83",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+]
 anthropic = ["langchain-anthropic>=0.3.0"]
-google = ["langchain-google-genai>=0.1.0"]
-dev = ["pytest>=7.0", "black>=24.0", "ruff>=0.1.0"]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -1938,35 +1991,39 @@ build-backend = "hatchling.build"
 ### 主要パッケージ一覧
 
 #### 科学計算ツール（conda経由）
+- **OpenMM**: Pythonプログラマブル、GPU最適化MD計算
+- **RDKit**: ケモインフォマティクス
+- **MDAnalysis**: 軌道解析
+- **BioPython**: バイオインフォマティクス
+- **NumPy, SciPy, Pandas**: 数値計算・データ処理
+- **PDBFixer**: PDB構造修復
 - **AmberTools**: 完全OSSのAmberツール群（tleap, antechamber, parmchk2等）
 - **Packmol**: 溶媒・膜系の構築
 - **Smina**: ドッキングツール（AutoDock Vina fork）
-- **PDBFixer**: PDB構造修復
 
-#### Pythonパッケージ（uv経由）
-- **Boltz-2**: 構造予測・複合体生成
+#### Pythonパッケージ（pip経由）
+- **Boltz-2**: 構造予測・複合体生成（オプション）
 - **PDB2PQR + PROPKA**: プロトネーション
-- **RDKit**: ケモインフォマティクス
-- **OpenMM + ParmEd**: MD計算とトポロジー変換
+- **ParmEd**: トポロジー変換
 - **FastMCP**: MCPサーバー実装
-- **LangChain Core + LangGraph**: ワークフロー構築
+- **LangChain Core + LangGraph**: AIエージェントワークフロー構築
+- **langchain-mcp-adapters**: LangChainとMCPの公式統合
 
 ### 注意事項
 
-1. **conda + uv併用の方針**: 
-   - **conda環境**: 科学計算ツール（C/C++バイナリ）+ Python本体
-   - **uv pip**: conda環境内でPythonパッケージをインストール（高速）
-   - **uv run**: conda環境内でスクリプト実行（キャッシュ活用で高速起動）
+1. **conda + pip併用の方針**: 
+   - **conda**: 科学計算ツール（C/C++バイナリ、OpenMM、RDKit等）+ Python本体
+   - **pip**: Python純粋パッケージ（LangChain、FastMCP等）
+   - conda環境をアクティブにした状態でpipを使用
    
-2. **uv独自の仮想環境は使わない**: 
-   - `uv sync` は実行しない（`.venv`を作成してしまう）
-   - `uv pip install` を使ってconda環境に直接インストール
-   - `uv run` はconda環境のPythonを使用
+2. **依存関係のロック**: 
+   - conda環境: `conda env export > environment.yml` でロック
+   - Pythonパッケージ: `pip freeze > requirements.txt` でロック
    
-3. **依存関係のロック**: 
-   - conda環境では `conda env export > environment.yml` でロック
-   - Pythonパッケージは `uv pip compile pyproject.toml -o requirements.txt` でロック可能
-   - または `pip freeze > requirements.txt`
+3. **Boltz-2の依存関係問題**: 
+   - Boltz-2の依存関係（fairscale）がscipy==1.13.1を厳密に要求
+   - condaでインストールしたscipyと競合する場合がある
+   - `--no-deps`オプションで既存パッケージを保持したまま、不足分のみ追加可能
 
 4. **MCP統合**: 
    - `langchain-mcp-adapters`パッケージを使用（公式サポート）
@@ -2002,8 +2059,6 @@ build-backend = "hatchling.build"
 - **langchain-mcp-adapters**: LangChainとMCPの公式統合パッケージ
 - **FastMCP**: https://github.com/jlowin/fastmcp
 - **MCP Protocol**: https://modelcontextprotocol.io/
-- **uv**: https://github.com/astral-sh/uv
-  - **uvドキュメント**: https://docs.astral.sh/uv/
 
 #### 科学計算ツール
 - **Boltz-2**: https://github.com/jwohlwend/boltz
@@ -2045,10 +2100,11 @@ mkdir -p notebooks
 # notebooks/utils.py (rich formatting)
 
 # 3. 依存関係追加
-uv add jupyter rich langchain-core langgraph langchain-mcp-adapters
+conda activate mcp-md
+pip install jupyter rich
 
 # 4. Jupyter起動
-uv run jupyter notebook
+jupyter notebook
 ```
 
 **成果物**:

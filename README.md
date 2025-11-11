@@ -73,12 +73,12 @@ pip install 'boltz[cuda]'
 > **注意**: Boltz-2の依存関係の一つ（fairscale）がscipy==1.13.1を厳密に要求するため、condaで既にインストールされているscipyと競合する場合があります。`--no-deps`オプションを使用することで、既存のパッケージを保持したまま、不足しているものだけを追加できます。
 
 #### 4. Ollamaのインストール（オプション）
-OllamaはLocal LLMのローカル実行環境です。デフォルトではOllamaのgemma3:4bモデルを使用します。
+OllamaはLocal LLMのローカル実行環境です。デフォルトではOllamaの`gpt-oss:20b`モデルを使用します。
 
 ```bash
 # Macの場合
 brew install ollama
-brew pull gemma3:4b
+brew pull gpt-oss:20b
 brew services start ollama
 ```
 

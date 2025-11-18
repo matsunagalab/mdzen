@@ -39,7 +39,8 @@ def run_md_simulation(
     timestep_fs: float = 2.0,
     output_frequency_ps: float = 10.0,
     trajectory_format: str = "dcd",
-    restraint_file: Optional[str] = None
+    restraint_file: Optional[str] = None,
+    name:str = None
 ) -> dict:
     """Run MD simulation using OpenMM
     
@@ -53,6 +54,7 @@ def run_md_simulation(
         output_frequency_ps: Output frequency in picoseconds
         trajectory_format: Trajectory format (dcd or pdb)
         restraint_file: Optional file with restraint definitions
+        name: The name to identify run
     
     Returns:
         Dict with simulation results and file paths
@@ -121,10 +123,18 @@ def run_md_simulation(
         logger.info(f"Applying restraints from {restraint_file}")
         # TODO: Implement restraint file parsing
     
+    # Prefix
+    pref:str
+    if name != None:
+        pref = name + "_"
+    else:
+        pref = ""
+
+
     # Setup reporters
-    trajectory_file = output_dir / f"trajectory.{trajectory_format}"
-    log_file = output_dir / "simulation.log"
-    energy_file = output_dir / "energy.dat"
+    trajectory_file = output_dir / f"{pref}trajectory.{trajectory_format}"
+    log_file = output_dir / f"{pref}simulation.log"
+    energy_file = output_dir / f"{pref}energy.dat"
     
     if trajectory_format.lower() == "dcd":
         simulation.reporters.append(DCDReporter(str(trajectory_file), int(output_frequency_ps / timestep_fs * 1000)))
@@ -166,7 +176,7 @@ def run_md_simulation(
     logger.info(f"Final energy: {final_energy}")
     
     # Save final structure
-    final_pdb = output_dir / "final_structure.pdb"
+    final_pdb = output_dir /f"{pref}final_structure.pdb"
     positions = state.getPositions()
     with open(final_pdb, 'w') as f:
         PDBFile.writeFile(simulation.topology, positions, f)
@@ -246,10 +256,10 @@ def analyze_rmsd(
     
     # Select atoms
     selection_indices = traj.topology.select(selection)
-    ref_selection = ref.atom_slice(selection_indices)
+    ref_selection = ref.topology.select(selection)
     
     # Calculate RMSD
-    rmsd = mdt.rmsd(traj, ref_selection, atom_indices=selection_indices)
+    rmsd = mdt.rmsd(traj, ref, atom_indices=selection_indices, ref_atom_indices=ref_selection)
     
     # Calculate statistics
     mean_rmsd = float(np.mean(rmsd))

@@ -131,7 +131,7 @@ def build_system_tleap(
     
     # Run tleap
     try:
-        tleap_wrapper.run(['-f', str(leap_in)], cwd=output_dir)
+        tleap_wrapper.run(['-f', str(leap_in)])
         logger.info("tleap system building completed")
     except Exception as e:
         logger.error(f"tleap failed: {e}")

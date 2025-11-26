@@ -12,7 +12,7 @@ import logging
 import numpy as np
 from pathlib import Path
 from typing import Optional
-from fastmcp import FastMCP
+from mcp.server import FastMCP
 
 import sys
 import os
@@ -39,7 +39,8 @@ def run_md_simulation(
     timestep_fs: float = 2.0,
     output_frequency_ps: float = 10.0,
     trajectory_format: str = "dcd",
-    restraint_file: Optional[str] = None
+    restraint_file: Optional[str] = None,
+    name:str = None
 ) -> dict:
     """Run MD simulation using OpenMM
     
@@ -53,6 +54,7 @@ def run_md_simulation(
         output_frequency_ps: Output frequency in picoseconds
         trajectory_format: Trajectory format (dcd or pdb)
         restraint_file: Optional file with restraint definitions
+        name: The name to identify run
     
     Returns:
         Dict with simulation results and file paths
@@ -121,10 +123,18 @@ def run_md_simulation(
         logger.info(f"Applying restraints from {restraint_file}")
         # TODO: Implement restraint file parsing
     
+    # Prefix
+    pref:str
+    if name != None:
+        pref = name + "_"
+    else:
+        pref = ""
+
+
     # Setup reporters
-    trajectory_file = output_dir / f"trajectory.{trajectory_format}"
-    log_file = output_dir / "simulation.log"
-    energy_file = output_dir / "energy.dat"
+    trajectory_file = output_dir / f"{pref}trajectory.{trajectory_format}"
+    log_file = output_dir / f"{pref}simulation.log"
+    energy_file = output_dir / f"{pref}energy.dat"
     
     if trajectory_format.lower() == "dcd":
         simulation.reporters.append(DCDReporter(str(trajectory_file), int(output_frequency_ps / timestep_fs * 1000)))
@@ -151,6 +161,9 @@ def run_md_simulation(
     initial_energy = state.getPotentialEnergy()
     logger.info(f"Initial energy: {initial_energy}")
     
+    # Minimize energy
+    simulation.minimizeEnergy()
+
     # Run simulation
     simulation_steps = int(simulation_time_ns * 1000000 / timestep_fs)  # Convert ns to steps
     logger.info(f"Running {simulation_steps} steps ({simulation_time_ns}ns)")
@@ -163,7 +176,7 @@ def run_md_simulation(
     logger.info(f"Final energy: {final_energy}")
     
     # Save final structure
-    final_pdb = output_dir / "final_structure.pdb"
+    final_pdb = output_dir /f"{pref}final_structure.pdb"
     positions = state.getPositions()
     with open(final_pdb, 'w') as f:
         PDBFile.writeFile(simulation.topology, positions, f)
@@ -243,10 +256,10 @@ def analyze_rmsd(
     
     # Select atoms
     selection_indices = traj.topology.select(selection)
-    ref_selection = ref.atom_slice(selection_indices)
+    ref_selection = ref.topology.select(selection)
     
     # Calculate RMSD
-    rmsd = mdt.rmsd(traj, ref_selection, atom_indices=selection_indices)
+    rmsd = mdt.rmsd(traj, ref, atom_indices=selection_indices, ref_atom_indices=ref_selection)
     
     # Calculate statistics
     mean_rmsd = float(np.mean(rmsd))
@@ -783,6 +796,187 @@ def analyze_energy_timeseries(
     logger.info(f"Analyzed {len(df)} energy frames")
     
     return results
+
+@mcp.tool()
+def compute_q_value(trajectory_file: str, topology=None, reference_file=None, frames:int=10, output_contact='contact', output_q='q_value') -> dict:
+    """
+    compute Q value from trajectory file, and then visualize it.
+    Args:
+      trajectory_file: The file to compute, usually .pdb or .dcd.
+      topology: If you use .dcd file, you also have to use topology file.
+      reference_file: The reference comformation. If no file is specified, the first frame of the trajectory will be used.
+      frames: The number of frame to compute Q value.
+      output_contact: Path to the output file for contact.
+      output_q: Path to the output file for q values.
+
+    Return:
+      q_mean: Average Q-value of the entire structure
+      contact_path: Path to the contact map
+      q_value_path: Path to the Q-value map
+    """
+
+    try:
+        import mdtraj as mdt
+    except ImportError:
+        raise ImportError("MDTraj not installed. Install with: conda install -c conda-forge mdtraj")
+    
+    if trajectory_file.endswith('.pdb'):
+        traj = mdt.load(trajectory_file, atom_indices=mdt.load(trajectory_file).topology.select('protein'))
+    if trajectory_file.endswith('.dcd'):
+        traj = mdt.load_dcd(trajectory_file, top=topology, atom_indices=mdt.load(topology).topology.select('protein'))
+    
+    if reference_file == None:
+        ref = traj[0]
+    else:
+        ref = mdt.load(reference_file)
+
+    traj_cut = traj[-frames:]
+
+    output_dir = WORKING_DIR / "simulations"
+    ensure_directory(output_dir)
+
+    contact_path = output_dir / f"{output_contact}.png"
+    q_value_path = output_dir / f"{output_q}.png"
+
+    q_list, native_contacts_with_indices, q_mean = compute_contact(traj_cut, ref)
+    plot_q_value(q_list, native_contacts_with_indices, traj.n_residues, contact_path, q_value_path)
+
+    return {
+        "q_mean":q_mean,
+        "contact_path":contact_path,
+        "q_value_path":q_value_path
+    }
+
+
+def compute_contact(traj, native):
+    from itertools import combinations
+    import mdtraj as mdt
+
+    BETA_CONST = 50  # 1/nm
+    LAMBDA_CONST = 1.8
+    NATIVE_CUTOFF = 0.45  # nanometers
+    
+    # get the indices of all of the heavy atoms
+    heavy = native.topology.select_atom_indices('heavy')
+    # get the pairs of heavy atoms which are farther than 3
+    # residues apart
+    heavy_pairs = np.array(
+        [(i,j) for (i,j) in combinations(heavy, 2)
+            if abs(native.topology.atom(i).residue.index - \
+                   native.topology.atom(j).residue.index) > 3])
+    
+    # compute the distances between these pairs in the native state
+    heavy_pairs_distances = mdt.compute_distances(native[0], heavy_pairs)[0]
+    
+    # and get the pairs s.t. the distance is less than NATIVE_CUTOFF
+    native_contacts = heavy_pairs[heavy_pairs_distances < NATIVE_CUTOFF]
+    print("Number of native contacts", len(native_contacts))
+    
+    native_contacts_with_indices = [[] for _ in range(len(native_contacts))]
+    
+    contact_residue_indices = []
+
+    for i in range(len(native_contacts)):
+        index_i = native.topology.atom(native_contacts[i][0]).residue.index
+        index_j = native.topology.atom(native_contacts[i][1]).residue.index
+        indices = [index_i, index_j]
+        if indices not in contact_residue_indices:
+            contact_residue_indices.append(indices)
+        native_contacts_with_indices[i].append(native_contacts[i].tolist())  # append atom indices
+        native_contacts_with_indices[i].append(indices)  # append residue indices
+
+
+    # now compute these distances for the whole trajectory
+    r = mdt.compute_distances(traj, native_contacts)
+    r0 = mdt.compute_distances(native[0], native_contacts)
+
+    atom_q = 1.0 / (1 + np.exp(BETA_CONST * (r - LAMBDA_CONST * r0)))
+    
+    q_ave_over_frame = np.mean(atom_q, axis=0)
+    q_ave_com = np.mean(q_ave_over_frame)
+
+    q_ave_with_indices = [[q_ave_over_frame[i], native_contacts_with_indices[i][1]] for i in range(len(native_contacts))]
+
+    # conmute average q over residue
+    q_ave_over_residue = []
+
+    for residue in contact_residue_indices:
+        value_list = [q[0] for q in q_ave_with_indices if q[1] == residue]
+        #print(value_list)
+        mean = np.mean(value_list)
+        q_ave_over_residue.append([mean, residue])
+
+
+    #return  native_contacts, native_contacts_with_indices
+    return q_ave_over_residue, native_contacts_with_indices, q_ave_com
+    
+def plot_q_value(q_list, native_contacts_with_indices, n_residue, output_contact, output_q):
+    
+    try:
+        import matplotlib
+        import matplotlib.pyplot as plt
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+    except ImportError:
+        raise ImportError("Matplotlib not installed. Install with: conda install matplotlib")
+
+
+    q_matrix = np.zeros((n_residue, n_residue))
+    #contact_matrix = np.zeros((n_residue, n_residue))
+
+    # for pair in native_contacts_with_indices:
+    #     i = pair[1][0]
+    #     j = pair[1][1]
+    #     contact_matrix[i][j] = contact_matrix[j][i] = 1
+
+    contact_x = [pair[1][0] for pair in native_contacts_with_indices]
+    contact_y = [pair[1][1] for pair in native_contacts_with_indices]
+
+    tmp_x = contact_x.copy()
+    tmp_y = contact_y.copy()
+
+    contact_x.extend(tmp_y)
+    contact_y.extend(tmp_x)
+
+    for q in q_list:
+        i = q[1][0]
+        j = q[1][1]
+        q_matrix[i][j] = q_matrix[j][i] = q[0]
+
+
+    fig0= plt.figure(figsize=(12,12))
+    ax0 = fig0.add_axes([0.1,0.1,0.8,0.8])
+    fig1 = plt.figure(figsize=(12,12))
+    ax1 = fig1.add_axes([0.05,0.05,0.85,0.9])
+
+    # plt.xlim(0, residue_number)
+    # plt.ylim(0, residue_number)
+
+    #ax0.imshow(contact_matrix, cmap='Grays')
+    ax0.set_xlim(0, n_residue)
+    ax0.set_ylim(0, n_residue)
+    ax0.invert_yaxis()
+    ax0.scatter(contact_x, contact_y, marker=',')
+    ax1.invert_yaxis()
+
+    #カラーマップ調整
+    cm = matplotlib.cm.Blues
+    cm_list = cm(np.arange(cm.N))
+    cm_list[0,3] = 0  # 0値の色を透明に変更
+    cm_white = matplotlib.colors.ListedColormap(cm_list)
+
+    #im = ax1.imshow(q_matrix, cmap='Blues')
+    im = ax1.imshow(q_matrix, cmap=cm_white)
+
+    #カラーバーの高さを合わせる
+    divider = make_axes_locatable(ax1)
+    color_ax = divider.append_axes('right', size='5%', pad=0.5)
+    fig1.colorbar(im, ax=ax1, cax=color_ax)
+    #fig1.subplots_adjust(left=1, right=2, top=1, bottom=0.5)
+
+    fig0.savefig(output_contact)
+    fig1.savefig(output_q)
+
+    plt.show()
 
 
 if __name__ == "__main__":

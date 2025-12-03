@@ -14,13 +14,12 @@ import json
 import logging
 import re
 import shutil
-import uuid
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from fastmcp import FastMCP
 
 from common.base import BaseToolWrapper
-from common.utils import setup_logger, ensure_directory
+from common.utils import setup_logger, ensure_directory, generate_job_id
 
 logger = setup_logger(__name__)
 
@@ -40,13 +39,334 @@ obabel_wrapper = BaseToolWrapper("obabel", conda_env="mcp-md")
 
 
 # =============================================================================
+# Known Ligand SMILES Dictionary (for template matching)
+# =============================================================================
+# These SMILES are from PDB Chemical Component Dictionary (CCD)
+# Used as fallback when CCD API is unavailable
+
+KNOWN_LIGAND_SMILES = {
+    # Nucleotides and derivatives
+    "ATP": "Nc1ncnc2c1ncn2[C@@H]1O[C@H](COP(O)(=O)OP(O)(=O)OP(O)(O)=O)[C@@H](O)[C@H]1O",
+    "ADP": "Nc1ncnc2c1ncn2[C@@H]1O[C@H](COP(O)(=O)OP(O)(O)=O)[C@@H](O)[C@H]1O",
+    "AMP": "Nc1ncnc2c1ncn2[C@@H]1O[C@H](COP(O)(O)=O)[C@@H](O)[C@H]1O",
+    "GTP": "Nc1nc2c(ncn2[C@@H]2O[C@H](COP(O)(=O)OP(O)(=O)OP(O)(O)=O)[C@@H](O)[C@H]2O)c(=O)[nH]1",
+    "GDP": "Nc1nc2c(ncn2[C@@H]2O[C@H](COP(O)(=O)OP(O)(O)=O)[C@@H](O)[C@H]2O)c(=O)[nH]1",
+    
+    # Coenzymes
+    "NAD": "NC(=O)c1ccc[n+](c1)[C@@H]1O[C@H](COP(O)(=O)OP(O)(=O)OC[C@H]2O[C@@H](n3cnc4c(N)ncnc43)[C@H](O)[C@@H]2O)[C@@H](O)[C@H]1O",
+    "NADP": "NC(=O)c1ccc[n+](c1)[C@@H]1O[C@H](COP(O)(=O)OP(O)(=O)OC[C@H]2O[C@@H](n3cnc4c(N)ncnc43)[C@H](OP(O)(O)=O)[C@@H]2O)[C@@H](O)[C@H]1O",
+    "FAD": "Cc1cc2nc3c(=O)[nH]c(=O)nc-3n(C[C@H](O)[C@H](O)[C@H](O)COP(O)(=O)OP(O)(=O)OC[C@H]3O[C@@H](n4cnc5c(N)ncnc54)[C@H](O)[C@@H]3O)c2cc1C",
+    "SAH": "Nc1ncnc2c1ncn2[C@@H]1O[C@H](CSCC[C@H](N)C(=O)O)[C@@H](O)[C@H]1O",
+    "SAM": "C[S+](CC[C@H](N)C(O)=O)C[C@H]1O[C@@H](n2cnc3c(N)ncnc32)[C@H](O)[C@@H]1O",
+    
+    # Phosphate derivatives
+    "AP5": "Nc1ncnc2c1ncn2[C@@H]1O[C@H](COP(O)(=O)OP(O)(=O)OP(O)(=O)OP(O)(=O)OP(O)(=O)OC[C@H]2O[C@@H](n3cnc4c(N)ncnc43)[C@H](O)[C@@H]2O)[C@@H](O)[C@H]1O",
+    
+    # Common drug-like molecules
+    "HEM": "CC1=C(CCC(O)=O)C2=[N+]3C1=Cc1c(C)c(C=C)c4C=C5C(C)=C(C=C)C6=[N+]5[Fe-]3(n14)n1c(=C6)c(C)c(CCC(O)=O)c1=C2",
+    
+    # Add more as needed
+}
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
 
-def _generate_job_id() -> str:
-    """Generate unique job identifier."""
-    return str(uuid.uuid4())[:8]
+def _fetch_smiles_from_ccd(ligand_id: str, timeout: int = 10) -> Optional[str]:
+    """Fetch canonical SMILES from PDB Chemical Component Dictionary.
+    
+    Queries the RCSB PDB REST API to get the canonical SMILES for a ligand.
+    This provides the "source of truth" for bond orders.
+    
+    Args:
+        ligand_id: 3-letter ligand residue name (e.g., 'ATP', 'SAH')
+        timeout: Request timeout in seconds
+    
+    Returns:
+        Canonical SMILES string, or None if not found
+    
+    Example:
+        >>> smiles = _fetch_smiles_from_ccd("ATP")
+        >>> print(smiles)
+        'c1nc(c2c(n1)n(cn2)[C@H]3[C@@H]([C@@H]([C@H](O3)COP...'
+    """
+    try:
+        import requests
+    except ImportError:
+        logger.warning("requests library not installed. Cannot fetch from CCD API.")
+        return None
+    
+    ligand_id = ligand_id.upper().strip()
+    url = f"https://data.rcsb.org/rest/v1/core/chemcomp/{ligand_id}"
+    
+    try:
+        response = requests.get(url, timeout=timeout)
+        if response.status_code != 200:
+            logger.debug(f"CCD API returned status {response.status_code} for {ligand_id}")
+            return None
+        
+        data = response.json()
+        
+        # rcsb_chem_comp_descriptor is a dict with keys: smiles, smilesstereo, in_ch_i, etc.
+        rcsb_desc = data.get('rcsb_chem_comp_descriptor', {})
+        if isinstance(rcsb_desc, dict):
+            # Prefer stereochemistry-aware SMILES
+            smiles = rcsb_desc.get('smilesstereo') or rcsb_desc.get('smiles')
+            if smiles:
+                logger.info(f"Fetched SMILES for {ligand_id} from CCD: {smiles[:50]}...")
+                return smiles
+        
+        # Fallback: try pdbx_chem_comp_descriptor (list of descriptors)
+        pdbx_desc = data.get('pdbx_chem_comp_descriptor', [])
+        if isinstance(pdbx_desc, list):
+            for desc in pdbx_desc:
+                if isinstance(desc, dict):
+                    desc_type = desc.get('type', '')
+                    if 'SMILES' in desc_type.upper():
+                        smiles = desc.get('descriptor')
+                        if smiles:
+                            logger.info(f"Fetched SMILES for {ligand_id} from CCD (pdbx): {smiles[:50]}...")
+                            return smiles
+        
+        logger.debug(f"No SMILES found in CCD for {ligand_id}")
+        return None
+        
+    except requests.exceptions.Timeout:
+        logger.warning(f"CCD API request timed out for {ligand_id}")
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"CCD API request failed for {ligand_id}: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Error fetching SMILES from CCD for {ligand_id}: {e}")
+        return None
+
+
+def _get_ligand_smiles(ligand_id: str, user_smiles: Optional[str] = None, 
+                       fetch_from_ccd: bool = True) -> Optional[str]:
+    """Get SMILES for a ligand with fallback chain.
+    
+    Priority order:
+    1. User-provided SMILES (if given)
+    2. CCD API lookup (if fetch_from_ccd=True)
+    3. KNOWN_LIGAND_SMILES dictionary
+    
+    Args:
+        ligand_id: 3-letter ligand residue name
+        user_smiles: User-provided SMILES (highest priority)
+        fetch_from_ccd: Whether to query CCD API
+    
+    Returns:
+        SMILES string, or None if not found
+    """
+    ligand_id = ligand_id.upper().strip()
+    
+    # Priority 1: User-provided SMILES
+    if user_smiles:
+        logger.info(f"Using user-provided SMILES for {ligand_id}")
+        return user_smiles
+    
+    # Priority 2: CCD API
+    if fetch_from_ccd:
+        smiles = _fetch_smiles_from_ccd(ligand_id)
+        if smiles:
+            return smiles
+    
+    # Priority 3: Known ligands dictionary
+    if ligand_id in KNOWN_LIGAND_SMILES:
+        logger.info(f"Using known SMILES for {ligand_id} from dictionary")
+        return KNOWN_LIGAND_SMILES[ligand_id]
+    
+    logger.warning(f"No SMILES found for ligand {ligand_id}")
+    return None
+
+
+def _assign_bond_orders_from_smiles(pdb_mol, smiles: str):
+    """Assign correct bond orders to PDB molecule using SMILES template.
+    
+    This is the key function for robust ligand preparation. It takes a molecule
+    read from PDB (which may have incorrect/missing bond orders) and assigns
+    the correct bond orders from a SMILES template.
+    
+    Args:
+        pdb_mol: RDKit molecule from PDB (with coordinates but uncertain bonds)
+        smiles: Canonical SMILES with correct bond orders
+    
+    Returns:
+        RDKit molecule with correct bond orders and original coordinates
+    
+    Raises:
+        ValueError: If template matching fails (atom count mismatch, etc.)
+    
+    Example:
+        >>> pdb_mol = Chem.MolFromPDBFile("ligand.pdb", sanitize=False, removeHs=False)
+        >>> correct_mol = _assign_bond_orders_from_smiles(pdb_mol, "c1ccccc1O")
+    """
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+    
+    # Create template molecule from SMILES
+    template = Chem.MolFromSmiles(smiles)
+    if template is None:
+        raise ValueError(f"Invalid SMILES: {smiles}")
+    
+    # Add hydrogens to template for matching
+    template = Chem.AddHs(template)
+    
+    # Assign bond orders from template to PDB molecule
+    try:
+        new_mol = AllChem.AssignBondOrdersFromTemplate(template, pdb_mol)
+    except Exception as e:
+        raise ValueError(f"Template matching failed: {e}. "
+                        f"PDB atoms: {pdb_mol.GetNumAtoms()}, "
+                        f"Template atoms: {template.GetNumAtoms()}")
+    
+    # Sanitize the molecule to ensure chemical validity
+    try:
+        Chem.SanitizeMol(new_mol)
+    except Exception as e:
+        raise ValueError(f"Sanitization failed after template matching: {e}")
+    
+    logger.info(f"Successfully assigned bond orders from SMILES template")
+    return new_mol
+
+
+def _optimize_ligand_rdkit(mol, max_iters: int = 200, force_field: str = "MMFF94") -> Tuple[Any, bool]:
+    """Optimize ligand structure using RDKit force field.
+    
+    Light structure optimization to relax strained crystal structures
+    before AM1-BCC charge calculation in antechamber.
+    
+    Args:
+        mol: RDKit molecule with 3D coordinates
+        max_iters: Maximum optimization iterations
+        force_field: Force field to use ("MMFF94" or "UFF")
+    
+    Returns:
+        Tuple of (optimized molecule, success flag)
+    
+    Example:
+        >>> mol = Chem.MolFromMolFile("ligand.sdf")
+        >>> opt_mol, success = _optimize_ligand_rdkit(mol)
+    """
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+    
+    # Ensure molecule has 3D coordinates
+    if mol.GetNumConformers() == 0:
+        logger.warning("Molecule has no conformers, generating 3D coordinates")
+        AllChem.EmbedMolecule(mol, AllChem.ETKDGv3())
+    
+    success = False
+    
+    if force_field.upper() == "MMFF94":
+        # Try MMFF94 (better for drug-like molecules)
+        try:
+            ff = AllChem.MMFFGetMoleculeForceField(mol, AllChem.MMFFGetMoleculeProperties(mol))
+            if ff is not None:
+                result = ff.Minimize(maxIts=max_iters)
+                success = (result == 0)  # 0 = converged
+                logger.info(f"MMFF94 optimization {'converged' if success else 'did not converge'}")
+            else:
+                logger.warning("MMFF94 force field setup failed, trying UFF")
+                force_field = "UFF"
+        except Exception as e:
+            logger.warning(f"MMFF94 optimization failed: {e}, trying UFF")
+            force_field = "UFF"
+    
+    if force_field.upper() == "UFF":
+        # Fallback to UFF (more general)
+        try:
+            result = AllChem.UFFOptimizeMolecule(mol, maxIters=max_iters)
+            success = (result == 0)
+            logger.info(f"UFF optimization {'converged' if success else 'did not converge'}")
+        except Exception as e:
+            logger.warning(f"UFF optimization failed: {e}")
+            success = False
+    
+    return mol, success
+
+
+def _apply_ph_protonation(smiles: str, target_ph: float = 7.4) -> Tuple[str, int]:
+    """Apply pH-dependent protonation state to SMILES using Dimorphite-DL.
+    
+    This converts neutral CCD SMILES to the correct protonation state at the target pH.
+    For example:
+    - Carboxylic acids (COOH) → Carboxylates (COO-) at pH 7.4
+    - Primary amines (NH2) → Protonated amines (NH3+) at pH 7.4
+    
+    Args:
+        smiles: Input SMILES (typically neutral from CCD)
+        target_ph: Target pH for protonation (default: 7.4)
+    
+    Returns:
+        Tuple of (protonated_smiles, net_charge)
+    
+    Example:
+        >>> smiles = "CC(=O)O"  # Acetic acid (neutral)
+        >>> prot_smiles, charge = _apply_ph_protonation(smiles, 7.4)
+        >>> print(prot_smiles, charge)  # "CC(=O)[O-]", -1
+    """
+    try:
+        from dimorphite_dl import protonate_smiles
+        from rdkit import Chem
+        
+        logger.info(f"Applying pH {target_ph} protonation to SMILES...")
+        
+        # Run Dimorphite-DL
+        # Use narrow pH range (ph_min=ph_max) and max_variants=1 to get single dominant state
+        # precision=1.0 (default) represents 1 standard deviation from mean pKa
+        protonated_smiles_list = protonate_smiles(
+            smiles,
+            ph_min=target_ph,
+            ph_max=target_ph,
+            precision=1.0,  # Default: 1 std dev from mean pKa
+            max_variants=1  # Only get the most likely state
+        )
+        
+        if not protonated_smiles_list:
+            logger.warning("Dimorphite-DL returned no results, using original SMILES")
+            # Calculate charge from original
+            mol = Chem.MolFromSmiles(smiles)
+            net_charge = Chem.GetFormalCharge(mol) if mol else 0
+            return smiles, net_charge
+        
+        # Take the first (most probable) protonation state
+        protonated_smiles = protonated_smiles_list[0]
+        
+        # Calculate net charge from protonated SMILES
+        mol = Chem.MolFromSmiles(protonated_smiles)
+        if mol is None:
+            logger.warning(f"Invalid protonated SMILES: {protonated_smiles}, using original")
+            mol = Chem.MolFromSmiles(smiles)
+            net_charge = Chem.GetFormalCharge(mol) if mol else 0
+            return smiles, net_charge
+        
+        net_charge = Chem.GetFormalCharge(mol)
+        
+        logger.info(f"Protonation result: {smiles[:30]}... → {protonated_smiles[:30]}... (charge: {net_charge})")
+        
+        return protonated_smiles, net_charge
+        
+    except ImportError:
+        logger.warning("Dimorphite-DL not installed, falling back to estimate_net_charge")
+        from rdkit import Chem
+        mol = Chem.MolFromSmiles(smiles)
+        if mol:
+            # Use simple estimation as fallback
+            charge_info = _estimate_charge_rdkit(mol)
+            net_charge = _estimate_physiological_charge(charge_info, target_ph)
+        else:
+            net_charge = 0
+        return smiles, net_charge
+    except Exception as e:
+        logger.warning(f"Dimorphite-DL failed: {e}, using original SMILES")
+        from rdkit import Chem
+        mol = Chem.MolFromSmiles(smiles)
+        net_charge = Chem.GetFormalCharge(mol) if mol else 0
+        return smiles, net_charge
 
 
 def _parse_sqm_output(sqm_out_path: Path) -> Dict[str, Any]:
@@ -322,23 +642,43 @@ def _estimate_physiological_charge(charge_info: Dict[str, Any], ph: float = 7.4)
 
 
 @mcp.tool()
-def parse_boltz2_complex(
-    cif_file: str,
-    output_dir: Optional[str] = None
+def parse_structure(
+    structure_file: str,
+    output_dir: Optional[str] = None,
+    select_chains: Optional[List[str]] = None,
+    include_ligands: bool = True,
+    exclude_waters: bool = True,
+    ligand_distance_cutoff: float = 5.0
 ) -> dict:
-    """Parse Boltz-2 mmCIF output and separate protein from ligand.
+    """Parse mmCIF or PDB file with chain selection support.
     
-    This tool extracts protein and ligand components from a Boltz-2 predicted
-    complex structure in mmCIF format.
+    General-purpose structure parser that works with:
+    - PDB database files (mmCIF or PDB format)
+    - Boltz-2 prediction outputs
+    - Any standard structure file
     
     Args:
-        cif_file: Path to mmCIF file from Boltz-2
+        structure_file: Path to mmCIF (.cif) or PDB (.pdb) file
         output_dir: Output directory (auto-generated if None)
+        select_chains: List of chain IDs to extract (e.g., ['A']). 
+                      If None, extracts all protein chains.
+        include_ligands: Include ligands bound to selected chains
+        exclude_waters: Exclude water molecules
+        ligand_distance_cutoff: Distance cutoff (Å) to determine if ligand 
+                               is bound to selected chain (default: 5.0)
     
     Returns:
         Dict with separated structure files and metadata
+    
+    Example:
+        # Extract chain A and its bound ligands from 1AKE
+        result = parse_structure(
+            "1AKE.cif",
+            select_chains=["A"],
+            include_ligands=True
+        )
     """
-    logger.info(f"Parsing Boltz-2 complex: {cif_file}")
+    logger.info(f"Parsing structure: {structure_file}")
     
     try:
         import gemmi
@@ -347,123 +687,295 @@ def parse_boltz2_complex(
     
     try:
         from rdkit import Chem
-        from rdkit.Chem import AllChem
     except ImportError:
         raise ImportError("RDKit not installed. Install via conda.")
     
-    cif_path = Path(cif_file)
-    if not cif_path.exists():
-        raise FileNotFoundError(f"mmCIF file not found: {cif_file}")
+    structure_path = Path(structure_file)
+    if not structure_path.exists():
+        raise FileNotFoundError(f"Structure file not found: {structure_file}")
+    
+    # Determine file format
+    suffix = structure_path.suffix.lower()
+    if suffix not in ['.cif', '.pdb', '.ent']:
+        raise ValueError(f"Unsupported file format: {suffix}. Use .cif or .pdb")
     
     # Setup output directory
-    job_id = _generate_job_id()
+    job_id = generate_job_id()
     if output_dir is None:
         output_dir = WORKING_DIR / job_id
     else:
         output_dir = Path(output_dir) / job_id
     ensure_directory(output_dir)
     
-    # Parse mmCIF
-    logger.info("Reading mmCIF with gemmi...")
-    doc = gemmi.cif.read(str(cif_path))
-    block = doc[0]
-    structure = gemmi.make_structure_from_block(block)
+    # Read structure
+    logger.info(f"Reading structure with gemmi ({suffix})...")
+    if suffix == '.cif':
+        doc = gemmi.cif.read(str(structure_path))
+        block = doc[0]
+        structure = gemmi.make_structure_from_block(block)
+    else:  # .pdb or .ent
+        structure = gemmi.read_pdb(str(structure_path))
     
-    # Separate entities
+    structure.setup_entities()
+    
+    # Collect chain information
+    all_chains = []
     protein_chains = []
     ligand_residues = []
-    chain_info = []
+    water_residues = []
     
-    for entity in structure.entities:
-        entity_type = entity.entity_type.name
-        chain_info.append({
-            "name": entity.name,
-            "type": entity_type,
-            "subchains": list(entity.subchains)
-        })
-        
-        if entity_type == "Polymer":
-            # Protein chain
-            for subchain_id in entity.subchains:
-                protein_chains.append(subchain_id)
-        elif entity_type == "NonPolymer":
-            # Ligand
-            for subchain_id in entity.subchains:
-                ligand_residues.append(subchain_id)
-    
-    logger.info(f"Found {len(protein_chains)} protein chains, {len(ligand_residues)} ligands")
-    
-    # Extract protein to PDB
-    protein_pdb = output_dir / "protein.pdb"
-    structure.remove_ligands_and_waters()
-    structure.write_pdb(str(protein_pdb))
-    logger.info(f"Wrote protein: {protein_pdb}")
-    
-    # Re-read original for ligand extraction
-    structure = gemmi.make_structure_from_block(block)
-    
-    # Extract ligand(s)
-    ligand_files = []
-    ligand_smiles_list = []
-    seen_ligands = {}  # Track unique ligands to avoid duplicates
+    # Standard amino acids
+    AMINO_ACIDS = {
+        'ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 
+        'ILE', 'LEU', 'LYS', 'MET', 'PHE', 'PRO', 'SER', 'THR', 'TRP', 
+        'TYR', 'VAL', 'SEC', 'PYL'  # Include selenocysteine and pyrrolysine
+    }
+    WATER_NAMES = {'HOH', 'WAT', 'H2O', 'DOD', 'D2O'}
     
     for model in structure:
         for chain in model:
+            chain_name = chain.name
+            has_protein = False
+            chain_ligands = []
+            chain_waters = []
+            
             for residue in chain:
-                # Check if non-standard residue (ligand)
-                if residue.entity_type == gemmi.EntityType.NonPolymer:
-                    res_name = residue.name
-                    chain_name = chain.name
+                res_name = residue.name.strip()
+                
+                if res_name in AMINO_ACIDS:
+                    has_protein = True
+                elif res_name in WATER_NAMES:
+                    chain_waters.append({
+                        'name': res_name,
+                        'chain': chain_name,
+                        'seqid': str(residue.seqid)
+                    })
+                else:
+                    # Non-protein, non-water = ligand candidate
+                    chain_ligands.append({
+                        'name': res_name,
+                        'chain': chain_name,
+                        'seqid': str(residue.seqid),
+                        'num_atoms': len(list(residue))
+                    })
+            
+            all_chains.append({
+                'name': chain_name,
+                'is_protein': has_protein,
+                'num_ligands': len(chain_ligands),
+                'num_waters': len(chain_waters)
+            })
+            
+            if has_protein:
+                protein_chains.append(chain_name)
+            ligand_residues.extend(chain_ligands)
+            water_residues.extend(chain_waters)
+    
+    logger.info(f"Found chains: {[c['name'] for c in all_chains]}")
+    logger.info(f"Protein chains: {protein_chains}")
+    logger.info(f"Ligand residues: {len(ligand_residues)}")
+    
+    # Determine which chains to extract
+    if select_chains is None:
+        # Default: extract all protein chains
+        chains_to_extract = protein_chains
+    else:
+        # Validate requested chains exist
+        available = {c['name'] for c in all_chains}
+        for ch in select_chains:
+            if ch not in available:
+                raise ValueError(f"Chain '{ch}' not found. Available: {sorted(available)}")
+        chains_to_extract = select_chains
+    
+    logger.info(f"Extracting chains: {chains_to_extract}")
+    
+    # Create new structure with selected chains
+    new_structure = gemmi.Structure()
+    new_model = gemmi.Model("1")
+    
+    # Track extracted ligands
+    extracted_ligands = []
+    
+    for model in structure:
+        for chain in model:
+            if chain.name not in chains_to_extract:
+                continue
+            
+            new_chain = gemmi.Chain(chain.name)
+            
+            for residue in chain:
+                res_name = residue.name.strip()
+                
+                # Skip waters if requested
+                if exclude_waters and res_name in WATER_NAMES:
+                    continue
+                
+                # Check if this is protein or ligand
+                if res_name in AMINO_ACIDS:
+                    # Protein residue - filter alternate conformations
+                    new_residue = gemmi.Residue()
+                    new_residue.name = residue.name
+                    new_residue.seqid = residue.seqid
+                    new_residue.subchain = residue.subchain
                     
-                    # Create unique identifier for this ligand instance
-                    lig_key = f"{res_name}_{chain_name}"
+                    seen_atom_names = set()
+                    for atom in residue:
+                        # Keep atoms with no altloc or altloc 'A'
+                        altloc_char = atom.altloc
+                        if altloc_char in ('\x00', '', 'A', ' '):
+                            if atom.name not in seen_atom_names:
+                                new_atom = gemmi.Atom()
+                                new_atom.name = atom.name
+                                new_atom.pos = atom.pos
+                                new_atom.occ = atom.occ
+                                new_atom.b_iso = atom.b_iso
+                                new_atom.element = atom.element
+                                new_residue.add_atom(new_atom)
+                                seen_atom_names.add(atom.name)
                     
-                    # Skip if we've already processed this exact ligand
-                    if lig_key in seen_ligands:
+                    if len(list(new_residue)) > 0:
+                        new_chain.add_residue(new_residue)
+                elif res_name not in WATER_NAMES:
+                    # Ligand - include if requested
+                    if include_ligands:
+                        extracted_ligands.append({
+                            'name': res_name,
+                            'chain': chain.name,
+                            'seqid': str(residue.seqid),
+                            'in_selected_chain': True
+                        })
+            
+            if len(list(new_chain)):
+                new_model.add_chain(new_chain)
+    
+    # If include_ligands, also find ligands in other chains that are close to selected chains
+    if include_ligands and ligand_distance_cutoff > 0:
+        # Get atoms from selected protein chains for distance calculation
+        selected_atoms = []
+        for model in structure:
+            for chain in model:
+                if chain.name in chains_to_extract:
+                    for residue in chain:
+                        if residue.name.strip() in AMINO_ACIDS:
+                            for atom in residue:
+                                pos = atom.pos
+                                selected_atoms.append((pos.x, pos.y, pos.z))
+        
+        # Check ligands in non-selected chains
+        for model in structure:
+            for chain in model:
+                if chain.name in chains_to_extract:
+                    continue  # Already handled
+                
+                for residue in chain:
+                    res_name = residue.name.strip()
+                    if res_name in AMINO_ACIDS or res_name in WATER_NAMES:
                         continue
-                    seen_ligands[lig_key] = True
                     
-                    # Create a structure with just this residue
-                    lig_structure = gemmi.Structure()
-                    lig_model = gemmi.Model("1")
-                    lig_chain = gemmi.Chain(chain_name)
-                    lig_chain.add_residue(residue)
-                    lig_model.add_chain(lig_chain)
-                    lig_structure.add_model(lig_model)
+                    # Check if any atom is close to selected protein
+                    is_close = False
+                    for atom in residue:
+                        pos = atom.pos
+                        for px, py, pz in selected_atoms:
+                            dist = ((pos.x - px)**2 + (pos.y - py)**2 + (pos.z - pz)**2)**0.5
+                            if dist < ligand_distance_cutoff:
+                                is_close = True
+                                break
+                        if is_close:
+                            break
                     
-                    # Write ligand PDB with chain name to avoid overwriting
-                    lig_pdb = output_dir / f"ligand_{res_name}_chain{chain_name}.pdb"
-                    lig_structure.write_pdb(str(lig_pdb))
-                    ligand_files.append(str(lig_pdb))
-                    logger.info(f"Wrote ligand: {lig_pdb}")
-                    
-                    # Try to extract SMILES using RDKit
-                    try:
-                        rdkit_mol = Chem.MolFromPDBFile(str(lig_pdb), removeHs=False, sanitize=False)
-                        if rdkit_mol:
-                            try:
-                                Chem.SanitizeMol(rdkit_mol)
-                                smiles = Chem.MolToSmiles(rdkit_mol)
-                            except:
-                                smiles = "SMILES_EXTRACTION_FAILED"
-                            ligand_smiles_list.append({
-                                "residue": res_name,
-                                "chain": chain_name,
-                                "smiles": smiles,
-                                "file": str(lig_pdb)
-                            })
-                    except Exception as e:
-                        logger.warning(f"Could not extract SMILES for {res_name}: {e}")
+                    if is_close:
+                        extracted_ligands.append({
+                            'name': res_name,
+                            'chain': chain.name,
+                            'seqid': str(residue.seqid),
+                            'in_selected_chain': False,
+                            'note': f'Close to selected chain (< {ligand_distance_cutoff} Å)'
+                        })
+    
+    new_structure.add_model(new_model)
+    
+    # Write protein PDB
+    protein_pdb = output_dir / "protein.pdb"
+    new_structure.write_pdb(str(protein_pdb))
+    logger.info(f"Wrote protein: {protein_pdb}")
+    
+    # Extract individual ligand files
+    ligand_files = []
+    seen_ligands = set()
+    
+    for lig_info in extracted_ligands:
+        lig_name = lig_info['name']
+        lig_chain = lig_info['chain']
+        lig_seqid = lig_info['seqid']
+        
+        # Create unique key
+        lig_key = f"{lig_name}_{lig_chain}_{lig_seqid}"
+        if lig_key in seen_ligands:
+            continue
+        seen_ligands.add(lig_key)
+        
+        # Find and extract this ligand
+        for model in structure:
+            for chain in model:
+                if chain.name != lig_chain:
+                    continue
+                for residue in chain:
+                    if residue.name.strip() == lig_name and str(residue.seqid) == lig_seqid:
+                        # Create new residue with only one conformation
+                        # (filter out alternate locations - keep only '' or 'A')
+                        new_residue = gemmi.Residue()
+                        new_residue.name = residue.name
+                        new_residue.seqid = residue.seqid
+                        new_residue.subchain = residue.subchain
+                        
+                        seen_atom_names = set()
+                        for atom in residue:
+                            # Keep atoms with no altloc or altloc 'A'
+                            # In gemmi, altloc is '\x00' for no alternate, or a single char like 'A', 'B'
+                            altloc_char = atom.altloc
+                            if altloc_char in ('\x00', '', 'A', ' '):
+                                # Avoid duplicate atoms (same name)
+                                if atom.name not in seen_atom_names:
+                                    new_atom = gemmi.Atom()
+                                    new_atom.name = atom.name
+                                    new_atom.pos = atom.pos
+                                    new_atom.occ = atom.occ
+                                    new_atom.b_iso = atom.b_iso
+                                    new_atom.element = atom.element
+                                    # Don't set altloc - leave as default (no alternate)
+                                    new_residue.add_atom(new_atom)
+                                    seen_atom_names.add(atom.name)
+                        
+                        # Create single-residue structure
+                        lig_structure = gemmi.Structure()
+                        lig_model = gemmi.Model("1")
+                        lig_chain_new = gemmi.Chain(lig_chain)
+                        lig_chain_new.add_residue(new_residue)
+                        lig_model.add_chain(lig_chain_new)
+                        lig_structure.add_model(lig_model)
+                        
+                        logger.info(f"Extracted ligand {lig_name}: {len(list(new_residue))} atoms (filtered from {len(list(residue))} with altlocs)")
+                        
+                        # Write ligand PDB
+                        lig_pdb = output_dir / f"ligand_{lig_name}_chain{lig_chain}.pdb"
+                        lig_structure.write_pdb(str(lig_pdb))
+                        ligand_files.append(str(lig_pdb))
+                        logger.info(f"Wrote ligand: {lig_pdb}")
     
     result = {
         "job_id": job_id,
         "output_dir": str(output_dir),
+        "source_file": str(structure_file),
+        "file_format": suffix[1:],  # cif or pdb
         "protein_pdb": str(protein_pdb),
         "ligand_files": ligand_files,
-        "ligand_smiles": ligand_smiles_list,
-        "chains": chain_info,
-        "num_protein_chains": len(protein_chains),
-        "num_ligands": len(ligand_files)
+        "all_chains": all_chains,
+        "selected_chains": chains_to_extract,
+        "extracted_ligands": extracted_ligands,
+        "num_protein_chains": len([c for c in all_chains if c['is_protein']]),
+        "num_ligands": len(ligand_files),
+        "exclude_waters": exclude_waters
     }
     
     # Save metadata
@@ -652,6 +1164,211 @@ def prepare_ligand_hydrogens(
 
 
 @mcp.tool()
+def prepare_ligand_for_amber(
+    ligand_pdb: str,
+    ligand_id: str,
+    smiles: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    optimize: bool = True,
+    max_opt_iters: int = 200,
+    fetch_smiles: bool = True,
+    target_ph: float = 7.4,
+    manual_charge: Optional[int] = None
+) -> dict:
+    """Prepare ligand for Antechamber using SMILES template matching (Best Practice).
+    
+    This is the recommended workflow for robust ligand preparation:
+    1. Get correct SMILES (user-provided > CCD API > known dictionary)
+    2. Apply pH-dependent protonation using Dimorphite-DL
+    3. Use AssignBondOrdersFromTemplate to assign correct bond orders
+    4. Add hydrogens with correct geometry
+    5. Optionally optimize with MMFF94
+    6. Calculate net charge from protonated molecule
+    7. Output SDF format (preserves bond orders)
+    
+    This approach eliminates bond order ambiguity and ensures correct protonation
+    state for the target pH.
+    
+    Args:
+        ligand_pdb: Path to ligand PDB file (from parse_structure)
+        ligand_id: 3-letter ligand residue name (e.g., 'ATP', 'SAH')
+        smiles: User-provided SMILES (highest priority, bypasses API lookup)
+        output_dir: Output directory (uses ligand dir if None)
+        optimize: Whether to run MMFF94 optimization
+        max_opt_iters: Maximum optimization iterations
+        fetch_smiles: Whether to fetch SMILES from PDB CCD API
+        target_ph: Target pH for protonation state (default: 7.4)
+        manual_charge: Override calculated net charge (for complex cases)
+    
+    Returns:
+        Dict with:
+        - sdf_file: Path to prepared SDF file
+        - net_charge: Calculated net charge at target pH
+        - smiles_used: SMILES that was used (protonated form)
+        - smiles_source: Where SMILES came from ('user', 'ccd', 'dictionary')
+        - smiles_original: Original SMILES before protonation
+        - target_ph: Target pH used for protonation
+        - optimized: Whether optimization was performed
+        - optimization_converged: Whether optimization converged
+    
+    Example:
+        >>> result = prepare_ligand_for_amber(
+        ...     "ligand_ATP_chainA.pdb", 
+        ...     "ATP",
+        ...     target_ph=7.4,  # Physiological pH
+        ...     optimize=True
+        ... )
+        >>> print(f"Charge at pH 7.4: {result['net_charge']}")
+        >>> print(result['sdf_file'])  # Use this for antechamber -fi sdf
+    """
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+    
+    logger.info(f"Preparing ligand for Amber: {ligand_pdb} (ID: {ligand_id})")
+    
+    ligand_path = Path(ligand_pdb).resolve()
+    if not ligand_path.exists():
+        raise FileNotFoundError(f"Ligand PDB not found: {ligand_pdb}")
+    
+    if output_dir is None:
+        output_dir = ligand_path.parent
+    else:
+        output_dir = Path(output_dir).resolve()
+    ensure_directory(output_dir)
+    
+    # Step 1: Get SMILES (source of truth for bond orders)
+    smiles_source = None
+    smiles_used = None
+    
+    if smiles:
+        smiles_used = smiles
+        smiles_source = "user"
+        logger.info(f"Using user-provided SMILES for {ligand_id}")
+    else:
+        # Try to get SMILES from CCD or dictionary
+        smiles_used = _get_ligand_smiles(ligand_id, user_smiles=None, fetch_from_ccd=fetch_smiles)
+        if smiles_used:
+            if fetch_smiles:
+                # Check if it came from CCD or dictionary
+                ccd_smiles = _fetch_smiles_from_ccd(ligand_id) if fetch_smiles else None
+                smiles_source = "ccd" if ccd_smiles == smiles_used else "dictionary"
+            else:
+                smiles_source = "dictionary"
+    
+    if not smiles_used:
+        raise ValueError(
+            f"No SMILES found for ligand {ligand_id}. "
+            f"Please provide SMILES manually via the 'smiles' parameter, "
+            f"or add it to KNOWN_LIGAND_SMILES dictionary."
+        )
+    
+    logger.info(f"Using SMILES from {smiles_source}: {smiles_used[:50]}...")
+    
+    # Store original SMILES before protonation
+    smiles_original = smiles_used
+    
+    # Step 2: Apply pH-dependent protonation using Dimorphite-DL
+    # This converts neutral CCD SMILES to correct protonation state
+    protonated_smiles, calculated_charge = _apply_ph_protonation(smiles_used, target_ph)
+    
+    # Use protonated SMILES for template matching
+    smiles_used = protonated_smiles
+    
+    logger.info(f"Protonated SMILES at pH {target_ph}: {smiles_used[:50]}...")
+    logger.info(f"Calculated net charge: {calculated_charge}")
+    
+    # Step 3: Read PDB (without sanitization to avoid bond order issues)
+    pdb_mol = Chem.MolFromPDBFile(str(ligand_path), removeHs=False, sanitize=False)
+    if pdb_mol is None:
+        raise ValueError(f"Failed to read PDB file: {ligand_pdb}")
+    
+    logger.info(f"Read PDB: {pdb_mol.GetNumAtoms()} atoms")
+    
+    # Step 3: Assign bond orders from SMILES template
+    try:
+        mol_with_bonds = _assign_bond_orders_from_smiles(pdb_mol, smiles_used)
+    except ValueError as e:
+        # If template matching fails, try without hydrogens
+        logger.warning(f"Template matching failed, trying with hydrogen removal: {e}")
+        pdb_mol_no_h = Chem.RemoveHs(pdb_mol)
+        template = Chem.MolFromSmiles(smiles_used)
+        if template:
+            try:
+                mol_with_bonds = AllChem.AssignBondOrdersFromTemplate(template, pdb_mol_no_h)
+                Chem.SanitizeMol(mol_with_bonds)
+            except Exception as e2:
+                raise ValueError(f"Template matching failed even after H removal: {e2}")
+        else:
+            raise
+    
+    # Step 4: Add hydrogens with 3D coordinates
+    mol_with_h = Chem.AddHs(mol_with_bonds, addCoords=True)
+    logger.info(f"Added hydrogens: {mol_with_h.GetNumAtoms()} total atoms")
+    
+    # Step 6: Optional MMFF94 optimization
+    optimization_converged = False
+    if optimize:
+        logger.info(f"Running MMFF94 optimization (max {max_opt_iters} iters)...")
+        mol_with_h, optimization_converged = _optimize_ligand_rdkit(
+            mol_with_h, max_iters=max_opt_iters, force_field="MMFF94"
+        )
+    
+    # Step 7: Determine net charge
+    # Priority: manual_charge > Dimorphite-DL calculated_charge > GetFormalCharge
+    mol_formal_charge = Chem.GetFormalCharge(mol_with_h)
+    
+    if manual_charge is not None:
+        net_charge = manual_charge
+        charge_source = "manual"
+        logger.info(f"Using manual override charge: {net_charge}")
+    else:
+        # Use Dimorphite-DL calculated charge
+        net_charge = calculated_charge
+        charge_source = "dimorphite"
+        
+        # Log any discrepancy
+        if mol_formal_charge != calculated_charge:
+            logger.warning(
+                f"Charge discrepancy: mol formal={mol_formal_charge}, "
+                f"Dimorphite={calculated_charge}. Using Dimorphite result."
+            )
+    
+    logger.info(f"Final net charge: {net_charge} (source: {charge_source})")
+    
+    # Step 8: Write SDF file (preserves bond orders)
+    output_sdf = output_dir / f"{ligand_path.stem}_prepared.sdf"
+    
+    writer = Chem.SDWriter(str(output_sdf))
+    writer.SetForceV3000(False)  # V2000 format is more compatible with antechamber
+    writer.write(mol_with_h)
+    writer.close()
+    
+    logger.info(f"Wrote prepared ligand: {output_sdf}")
+    
+    # Verify output
+    if not output_sdf.exists():
+        raise RuntimeError(f"Failed to create output SDF: {output_sdf}")
+    
+    return {
+        "ligand_pdb": str(ligand_pdb),
+        "ligand_id": ligand_id,
+        "sdf_file": str(output_sdf),
+        "net_charge": net_charge,
+        "charge_source": charge_source,
+        "mol_formal_charge": mol_formal_charge,
+        "smiles_used": smiles_used,
+        "smiles_original": smiles_original,
+        "smiles_source": smiles_source,
+        "target_ph": target_ph,
+        "num_atoms": mol_with_h.GetNumAtoms(),
+        "num_heavy_atoms": mol_with_h.GetNumHeavyAtoms(),
+        "optimized": optimize,
+        "optimization_converged": optimization_converged,
+        "output_dir": str(output_dir)
+    }
+
+
+@mcp.tool()
 def prepare_protein_for_amber(
     pdb_file: str,
     output_dir: Optional[str] = None,
@@ -821,12 +1538,16 @@ def run_antechamber_robust(
     sqm_diagnostics = None
     charge_used = None
     
+    # Track if we need to try connectivity fix
+    connectivity_fixed = False
+    working_ligand = ligand_path
+    
     for attempt, try_charge in enumerate(charges_to_try[:max_retries + 1]):
         logger.info(f"Attempt {attempt + 1}: trying charge = {try_charge}")
         
         # Build antechamber command
         args = [
-            '-i', str(ligand_path),
+            '-i', str(working_ligand),
             '-fi', input_format,
             '-o', str(output_mol2),
             '-fo', 'mol2',
@@ -836,6 +1557,10 @@ def run_antechamber_robust(
             '-rn', residue_name,
             '-pf', 'y'  # Remove intermediate files
         ]
+        
+        # Add -j 5 to join fragments if we haven't fixed connectivity yet
+        if not connectivity_fixed:
+            args.extend(['-j', '5'])  # Join fragments based on distance
         
         try:
             antechamber_wrapper.run(args, cwd=output_dir)
@@ -849,8 +1574,35 @@ def run_antechamber_robust(
                 raise RuntimeError("Antechamber completed but output not created")
                 
         except Exception as e:
-            last_error = str(e)
+            error_str = str(e)
+            last_error = error_str
             logger.warning(f"Antechamber failed with charge {try_charge}: {e}")
+            
+            # Check if it's a connectivity/multiple unit error
+            if "more than one unit" in error_str and not connectivity_fixed:
+                logger.info("Attempting to fix connectivity with OpenBabel...")
+                
+                # Try to fix connectivity using OpenBabel
+                fixed_mol2 = output_dir / f"{input_stem}_fixed.mol2"
+                try:
+                    # Use OpenBabel to rebuild bonds
+                    obabel_args = [
+                        '-i', 'mol2', str(working_ligand),
+                        '-o', 'mol2', '-O', str(fixed_mol2),
+                        '-b',  # Perceive bond orders
+                        '--connect',  # Add bonds based on distance
+                    ]
+                    obabel_wrapper.run(obabel_args)
+                    
+                    if fixed_mol2.exists():
+                        working_ligand = fixed_mol2
+                        input_format = 'mol2'
+                        connectivity_fixed = True
+                        logger.info(f"Connectivity fixed, retrying with {fixed_mol2.name}")
+                        # Don't count this as an attempt - retry with same charge
+                        charges_to_try.insert(attempt + 1, try_charge)
+                except Exception as ob_error:
+                    logger.warning(f"OpenBabel connectivity fix failed: {ob_error}")
             
             # Parse sqm output for diagnostics
             sqm_out = output_dir / "sqm.out"
@@ -1019,7 +1771,7 @@ def build_complex_system(
     
     # Setup output directory
     if output_dir is None:
-        output_dir = WORKING_DIR / _generate_job_id()
+        output_dir = WORKING_DIR / generate_job_id()
     else:
         output_dir = Path(output_dir).resolve()
     ensure_directory(output_dir)
@@ -1228,7 +1980,7 @@ def build_multi_ligand_system(
     
     # Setup output directory
     if output_dir is None:
-        output_dir = WORKING_DIR / _generate_job_id()
+        output_dir = WORKING_DIR / generate_job_id()
     else:
         output_dir = Path(output_dir).resolve()
     ensure_directory(output_dir)
@@ -1395,31 +2147,34 @@ quit
 def boltz2_to_amber_complete(
     cif_file: str,
     output_dir: Optional[str] = None,
-    ph: float = 7.4,
+    ligand_smiles: Optional[str] = None,
     net_charge: Optional[int] = None,
     residue_name: str = "LIG",
     water_model: str = "tip3p",
-    box_padding: float = 12.0
+    box_padding: float = 12.0,
+    optimize_ligand: bool = True,
+    fetch_smiles_from_ccd: bool = True
 ) -> dict:
     """Complete workflow: Boltz-2 mmCIF to MD-ready Amber files.
     
-    Executes the full parameterization pipeline:
+    Executes the full parameterization pipeline using SMILES template matching:
     1. Parse mmCIF complex
     2. Prepare protein with pdb4amber
-    3. Add hydrogens to ligand
-    4. Estimate/verify net charge
-    5. Run antechamber (GAFF2 + AM1-BCC)
-    6. Validate frcmod
-    7. Build system with tleap
+    3. Prepare ligand with SMILES template (Best Practice)
+    4. Run antechamber with SDF input (GAFF2 + AM1-BCC)
+    5. Validate frcmod
+    6. Build system with tleap
     
     Args:
         cif_file: Boltz-2 output mmCIF file
         output_dir: Output directory (auto-generated if None)
-        ph: Target pH for protonation
-        net_charge: Ligand net charge (auto-estimated if None)
+        ligand_smiles: User-provided SMILES for ligand (highest priority)
+        net_charge: Ligand net charge (auto-calculated from SMILES if None)
         residue_name: Ligand residue name
         water_model: Water model for solvation
         box_padding: Box padding distance
+        optimize_ligand: Whether to run MMFF94 optimization on ligand
+        fetch_smiles_from_ccd: Whether to fetch SMILES from PDB CCD API
     
     Returns:
         Dict with complete workflow results
@@ -1436,9 +2191,9 @@ def boltz2_to_amber_complete(
         })
         logger.info(f"Completed step: {step}")
     
-    # Step 1: Parse complex
-    logger.info("Step 1/7: Parsing Boltz-2 complex...")
-    parse_result = parse_boltz2_complex(cif_file, output_dir)
+    # Step 1: Parse complex (using parse_structure for both Boltz-2 and PDB files)
+    logger.info("Step 1/6: Parsing structure...")
+    parse_result = parse_structure(cif_file, output_dir=output_dir)
     job_dir = Path(parse_result["output_dir"])
     log_step("parse_complex", parse_result)
     
@@ -1448,49 +2203,53 @@ def boltz2_to_amber_complete(
     # Use first ligand
     ligand_pdb = parse_result["ligand_files"][0]
     
+    # Get ligand ID from extracted ligands info
+    ligand_id = residue_name
+    if parse_result.get("extracted_ligands"):
+        ligand_id = parse_result["extracted_ligands"][0].get("name", residue_name)
+    
     # Step 2: Prepare protein
-    logger.info("Step 2/7: Preparing protein with pdb4amber...")
+    logger.info("Step 2/6: Preparing protein with pdb4amber...")
     protein_result = prepare_protein_for_amber(
         parse_result["protein_pdb"],
         output_dir=str(job_dir)
     )
     log_step("prepare_protein", protein_result)
     
-    # Step 3: Add hydrogens to ligand
-    logger.info("Step 3/7: Adding hydrogens to ligand...")
-    hydrogen_result = prepare_ligand_hydrogens(
-        ligand_pdb,
+    # Step 3: Prepare ligand using SMILES template matching (Best Practice)
+    logger.info("Step 3/6: Preparing ligand with SMILES template...")
+    ligand_result = prepare_ligand_for_amber(
+        ligand_pdb=ligand_pdb,
+        ligand_id=ligand_id,
+        smiles=ligand_smiles,
         output_dir=str(job_dir),
-        ph=ph
+        optimize=optimize_ligand,
+        fetch_smiles=fetch_smiles_from_ccd
     )
-    log_step("add_hydrogens", hydrogen_result)
+    log_step("prepare_ligand", ligand_result)
     
-    # Step 4: Estimate charge (if not provided)
-    logger.info("Step 4/7: Estimating net charge...")
-    charge_result = estimate_net_charge(hydrogen_result["output_file"], ph=ph)
-    log_step("estimate_charge", charge_result)
-    
+    # Use calculated charge from SMILES if not provided
     if net_charge is None:
-        net_charge = charge_result["estimated_charge_at_ph"]
-        logger.info(f"Using estimated charge: {net_charge}")
+        net_charge = ligand_result["net_charge"]
+        logger.info(f"Using charge from SMILES: {net_charge}")
     
-    # Step 5: Run antechamber
-    logger.info("Step 5/7: Running antechamber (GAFF2 + AM1-BCC)...")
+    # Step 4: Run antechamber with SDF input
+    logger.info("Step 4/6: Running antechamber (GAFF2 + AM1-BCC) with SDF input...")
     antechamber_result = run_antechamber_robust(
-        hydrogen_result["output_file"],
+        ligand_result["sdf_file"],  # Use SDF from prepare_ligand_for_amber
         output_dir=str(job_dir),
         net_charge=net_charge,
         residue_name=residue_name
     )
     log_step("antechamber", antechamber_result)
     
-    # Step 6: Validate frcmod
-    logger.info("Step 6/7: Validating frcmod...")
+    # Step 5: Validate frcmod
+    logger.info("Step 5/6: Validating frcmod...")
     frcmod_result = validate_frcmod(antechamber_result["frcmod"])
     log_step("validate_frcmod", frcmod_result)
     
-    # Step 7: Build system
-    logger.info("Step 7/7: Building MD system with tleap...")
+    # Step 6: Build system
+    logger.info("Step 6/6: Building MD system with tleap...")
     system_result = build_complex_system(
         protein_result["output_pdb"],
         antechamber_result["mol2"],
@@ -1504,7 +2263,9 @@ def boltz2_to_amber_complete(
     
     # Generate validation report
     validation_report = {
-        "charge_confidence": charge_result.get("confidence", "unknown"),
+        "smiles_source": ligand_result.get("smiles_source", "unknown"),
+        "ligand_optimized": ligand_result.get("optimized", False),
+        "optimization_converged": ligand_result.get("optimization_converged", False),
         "frcmod_valid": frcmod_result.get("valid", False),
         "frcmod_warnings": frcmod_result.get("attn_count", 0),
         "tleap_warnings": len(system_result.get("warnings", [])),
@@ -1522,11 +2283,12 @@ def boltz2_to_amber_complete(
         "parm7": system_result["parm7"],
         "rst7": system_result["rst7"],
         "complex_pdb": system_result["complex_pdb"],
+        "ligand_sdf": ligand_result["sdf_file"],
         "ligand_mol2": antechamber_result["mol2"],
         "ligand_frcmod": antechamber_result["frcmod"],
+        "ligand_smiles": ligand_result["smiles_used"],
         "protein_pdb": protein_result["output_pdb"],
         "net_charge": net_charge,
-        "ph": ph,
         "water_model": water_model,
         "box_padding": box_padding,
         "num_atoms": system_result.get("num_atoms"),

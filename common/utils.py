@@ -5,6 +5,7 @@ Common utility functions for MCP-MD.
 import os
 import logging
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Optional, Union
 from datetime import datetime
@@ -114,18 +115,39 @@ def generate_timestamp() -> str:
 
 
 def generate_unique_id(prefix: str = "") -> str:
-    """Generate unique ID
+    """Generate unique ID based on timestamp.
     
     Args:
         prefix: ID prefix
     
     Returns:
-        Unique ID string
+        Unique ID string (timestamp-based)
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if prefix:
         return f"{prefix}_{timestamp}"
     return timestamp
+
+
+def generate_job_id(length: int = 8) -> str:
+    """Generate unique job identifier using UUID.
+    
+    More collision-resistant than timestamp-based IDs.
+    Suitable for parallel job submissions.
+    
+    Args:
+        length: Length of ID (default: 8 characters)
+    
+    Returns:
+        Unique job ID string (UUID-based)
+    
+    Example:
+        >>> generate_job_id()
+        'a1b2c3d4'
+        >>> generate_job_id(12)
+        'a1b2c3d4e5f6'
+    """
+    return str(uuid.uuid4()).replace('-', '')[:length]
 
 
 def read_fasta(fasta_path: Union[str, Path]) -> dict[str, str]:

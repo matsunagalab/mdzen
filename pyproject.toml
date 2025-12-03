@@ -18,6 +18,7 @@ dependencies = [
     "pdb2pqr>=3.1.0",
     "propka>=3.5.0",
     "gemmi>=0.6.0",  # mmCIF parsing for Boltz-2 output
+    "dimorphite-dl>=1.3.2",  # pH-dependent protonation state generation
     
     # Topology manipulation
     "parmed>=4.3.0",

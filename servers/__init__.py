@@ -6,7 +6,6 @@ Available servers:
 - genesis_server: Boltz-2 structure generation from FASTA
 - complex_server: Protein-ligand complex prediction with Boltz-2
 - ligand_server: RDKit 3D generation and AmberTools parameterization
-- export_server: Format conversion and packaging
 - qc_min_server: Quality checks and energy minimization
 - amber_prep_server: Boltz-2 complex to MD input files with robust parameterization
 """
@@ -16,7 +15,6 @@ __all__ = [
     "genesis_server",
     "complex_server",
     "ligand_server",
-    "export_server",
     "qc_min_server",
     "amber_prep_server",
 ]

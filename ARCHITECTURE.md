@@ -86,12 +86,11 @@
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 
-[FastMCP Servers] (6 servers)
+[FastMCP Servers] (5 servers)
   ├─ Structure Server   (fetch, clean, protonate)
   ├─ Genesis Server     (Boltz-2 protein generation)
   ├─ Complex Server     (Boltz-2 complex, Smina dock)
   ├─ Ligand Server      (GAFF2/AM1-BCC parameterization)
-  ├─ Export Server      (format conversion, packaging)
   └─ QC/Min Server      (minimization, validation)
 
 [Persistent Storage]
@@ -685,11 +684,6 @@ def create_mcp_client() -> MultiServerMCPClient:
                 "transport": "stdio",
                 "command": "python",
                 "args": ["-m", "servers.ligand_server"]
-            },
-            "export": {
-                "transport": "stdio",
-                "command": "python",
-                "args": ["-m", "servers.export_server"]
             },
             "qc_min": {
                 "transport": "stdio",
@@ -1509,7 +1503,6 @@ mcp-md/
 │   ├── genesis_server.py         # Boltz-2タンパク質生成
 │   ├── complex_server.py         # Boltz-2複合体、Sminaドッキング
 │   ├── ligand_server.py          # GAFF2/AM1-BCC パラメータ化
-│   ├── export_server.py          # Amber/GROMACS/OpenMM形式変換
 │   └── qc_min_server.py          # 最小化、QC検証
 │
 ├── common/                       # ✅ 共通ライブラリ（既存・維持）
@@ -1646,11 +1639,6 @@ def create_mcp_client() -> MultiServerMCPClient:
                 "transport": "stdio",
                 "command": "python",
                 "args": ["-m", "servers.ligand_server"]
-            },
-            "export": {
-                "transport": "stdio",
-                "command": "python",
-                "args": ["-m", "servers.export_server"]
             },
             "qc_min": {
                 "transport": "stdio",
@@ -1797,22 +1785,6 @@ async def create_workflow_graph():
 **新設計での位置づけ**:
 - そのまま維持
 - 最小化機能は QC/Min MCP にも複製
-
-### Phase 6: Export Server
-
-**実装ファイル**:
-- `servers/export_server.py` (178行)
-- ParmEd統合
-
-**主要ツール**:
-1. `export_amber`: prmtop/inpcrd
-2. `export_gromacs`: ParmEd変換
-3. `export_openmm`: XML
-4. `package_system`: ZIP化
-
-**新設計での位置づけ**:
-- そのまま維持
-- Phase 1はAmberのみ、Phase 3でGROMACS/OpenMM追加
 
 ---
 

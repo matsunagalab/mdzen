@@ -138,7 +138,6 @@ def list_servers():
         ("genesis_server", "Boltz-2 structure generation from FASTA"),
         ("complex_server", "Boltz-2 complex prediction + Smina refinement"),
         ("ligand_server", "RDKit 3D generation, AmberTools GAFF2 parameterization"),
-        ("export_server", "Format conversion and packaging"),
         ("qc_min_server", "MolProbity QC checks + OpenMM minimization"),
     ]
     

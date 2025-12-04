@@ -457,6 +457,8 @@ def clean_protein(
             - warnings: list[str] - Non-critical issues encountered
             - errors: list[str] - Critical errors (empty if success=True)
             - statistics: dict - Summary counts (chains, residues, atoms, etc.)
+            - disulfide_bonds: list[dict] - Detected disulfide bonds with residue info
+              (CYS residues renamed to CYX for Amber compatibility)
     """
     logger.info(f"Cleaning protein structure: {pdb_file}")
     
@@ -468,7 +470,8 @@ def clean_protein(
         "operations": [],
         "warnings": [],
         "errors": [],
-        "statistics": {}
+        "statistics": {},
+        "disulfide_bonds": []
     }
     
     # Validate input file
@@ -641,7 +644,63 @@ def clean_protein(
             })
             result["warnings"].append("Missing atoms not added - structure may be incomplete")
         
-        # Step 5: Add hydrogens (protonation)
+        # Step 5: Detect and handle disulfide bonds
+        logger.info("Detecting disulfide bonds")
+        try:
+            # Find disulfide bonds based on CYS proximity
+            ss_bonds = fixer.topology.createDisulfideBonds(fixer.positions)
+            
+            if ss_bonds:
+                disulfide_info = []
+                for bond in ss_bonds:
+                    atom1, atom2 = bond
+                    res1 = atom1.residue
+                    res2 = atom2.residue
+                    
+                    # Record bond information before renaming
+                    bond_info = {
+                        "residue1": {
+                            "name": res1.name,
+                            "chain": res1.chain.id,
+                            "index": res1.index
+                        },
+                        "residue2": {
+                            "name": res2.name,
+                            "chain": res2.chain.id,
+                            "index": res2.index
+                        }
+                    }
+                    disulfide_info.append(bond_info)
+                    
+                    # Rename CYS -> CYX for Amber compatibility
+                    res1.name = 'CYX'
+                    res2.name = 'CYX'
+                
+                result["disulfide_bonds"] = disulfide_info
+                result["operations"].append({
+                    "step": "disulfide_bonds",
+                    "status": "detected",
+                    "details": f"Found {len(ss_bonds)} disulfide bond(s), renamed CYS -> CYX for Amber"
+                })
+                logger.info(f"Detected {len(ss_bonds)} disulfide bonds, renamed to CYX")
+            else:
+                result["operations"].append({
+                    "step": "disulfide_bonds",
+                    "status": "none_found",
+                    "details": "No disulfide bonds detected"
+                })
+                logger.info("No disulfide bonds detected")
+                
+        except Exception as e:
+            result["warnings"].append(f"Disulfide bond detection failed: {str(e)}")
+            result["operations"].append({
+                "step": "disulfide_bonds",
+                "status": "error",
+                "details": f"Detection failed: {str(e)}"
+            })
+            logger.warning(f"Disulfide bond detection failed: {e}")
+        
+        # Step 6: Add hydrogens (protonation)
         if add_hydrogens:
             logger.info(f"Adding hydrogens at pH {ph}")
             fixer.addMissingHydrogens(pH=ph)
@@ -658,7 +717,7 @@ def clean_protein(
             })
             result["warnings"].append("Hydrogens not added - required for most MD simulations")
         
-        # Step 6: Write output
+        # Step 7: Write output
         logger.info(f"Writing cleaned structure to {output_file}")
         output_file.parent.mkdir(parents=True, exist_ok=True)
         

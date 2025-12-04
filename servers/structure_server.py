@@ -647,15 +647,34 @@ def clean_protein(
         # Step 5: Detect and handle disulfide bonds
         logger.info("Detecting disulfide bonds")
         try:
-            # Find disulfide bonds based on CYS proximity
-            ss_bonds = fixer.topology.createDisulfideBonds(fixer.positions)
+            # Collect CYS residues before creating disulfide bonds
+            cys_residues = set()
+            for residue in fixer.topology.residues():
+                if residue.name == 'CYS':
+                    cys_residues.add(residue)
             
-            if ss_bonds:
-                disulfide_info = []
-                for bond in ss_bonds:
-                    atom1, atom2 = bond
+            # createDisulfideBonds() modifies topology in place and returns None
+            # It adds bonds between SG atoms of CYS residues that are close enough
+            fixer.topology.createDisulfideBonds(fixer.positions)
+            
+            # Find disulfide bonds by scanning topology bonds for S-S bonds between CYS
+            disulfide_info = []
+            cyx_residues = set()  # Track residues to rename
+            
+            for bond in fixer.topology.bonds():
+                atom1, atom2 = bond
+                # Check if this is an S-S bond between two CYS residues
+                if (atom1.element.symbol == 'S' and atom2.element.symbol == 'S' and
+                    atom1.residue in cys_residues and atom2.residue in cys_residues):
+                    
                     res1 = atom1.residue
                     res2 = atom2.residue
+                    
+                    # Avoid duplicate entries (bond may be listed once)
+                    bond_key = tuple(sorted([res1.index, res2.index]))
+                    if any(tuple(sorted([d["residue1"]["index"], d["residue2"]["index"]])) == bond_key 
+                           for d in disulfide_info):
+                        continue
                     
                     # Record bond information before renaming
                     bond_info = {
@@ -671,18 +690,21 @@ def clean_protein(
                         }
                     }
                     disulfide_info.append(bond_info)
-                    
-                    # Rename CYS -> CYX for Amber compatibility
-                    res1.name = 'CYX'
-                    res2.name = 'CYX'
-                
+                    cyx_residues.add(res1)
+                    cyx_residues.add(res2)
+            
+            # Rename CYS -> CYX for Amber compatibility
+            for res in cyx_residues:
+                res.name = 'CYX'
+            
+            if disulfide_info:
                 result["disulfide_bonds"] = disulfide_info
                 result["operations"].append({
                     "step": "disulfide_bonds",
                     "status": "detected",
-                    "details": f"Found {len(ss_bonds)} disulfide bond(s), renamed CYS -> CYX for Amber"
+                    "details": f"Found {len(disulfide_info)} disulfide bond(s), renamed {len(cyx_residues)} CYS -> CYX for Amber"
                 })
-                logger.info(f"Detected {len(ss_bonds)} disulfide bonds, renamed to CYX")
+                logger.info(f"Detected {len(disulfide_info)} disulfide bonds, renamed {len(cyx_residues)} residues to CYX")
             else:
                 result["operations"].append({
                     "step": "disulfide_bonds",

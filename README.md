@@ -136,12 +136,11 @@ mcp-md/
 │   ├── mcp_integration.py          # MCP統合
 │   └── utils.py                    # ユーティリティ
 │
-├── servers/              # FastMCPサーバー（7サーバー）
+├── servers/              # FastMCPサーバー（6サーバー）
 │   ├── structure_server.py         # PDB取得・修復
 │   ├── genesis_server.py           # Boltz-2構造生成
 │   ├── complex_server.py           # 複合体予測・ドッキング
 │   ├── ligand_server.py            # 配位子パラメータ化
-│   ├── assembly_server.py          # 系の組立
 │   ├── export_server.py            # 形式変換
 │   └── qc_min_server.py            # 品質チェック・最小化
 │

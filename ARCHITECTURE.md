@@ -67,8 +67,7 @@
 │  │   2. structure_repair (PDBFixer/PDB2PQR)                 │   │
 │  │   3. ligand_param (GAFF2/AM1-BCC)                        │   │
 │  │   4. complex_generation (Boltz-2/Smina)                  │   │
-│  │   5. assembly (tleap, solvate, ions)                     │   │
-│  │   6. qc_check (clash, bond, minimize)                    │   │
+│  │   5. qc_check (clash, bond, minimize)                    │   │
 │  │                                                            │   │
 │  │ Each step: Tool selection + Execution + Decision logging │   │
 │  └──────────────────────────────────────────────────────────┘   │
@@ -87,12 +86,11 @@
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 
-[FastMCP Servers] (7 servers)
+[FastMCP Servers] (6 servers)
   ├─ Structure Server   (fetch, clean, protonate)
   ├─ Genesis Server     (Boltz-2 protein generation)
   ├─ Complex Server     (Boltz-2 complex, Smina dock)
   ├─ Ligand Server      (GAFF2/AM1-BCC parameterization)
-  ├─ Assembly Server    (tleap, membrane, solvation)
   ├─ Export Server      (format conversion, packaging)
   └─ QC/Min Server      (minimization, validation)
 
@@ -218,8 +216,7 @@ setup_coordinator → setup_tools → [next step or retry]
 2. `structure_repair` - PDBFixer + PDB2PQR
 3. `ligand_param` - GAFF2/AM1-BCC
 4. `complex_generation` - Boltz-2 or Smina
-5. `assembly` - tleap系構築
-6. `qc_check` - 品質チェック
+5. `qc_check` - 品質チェック
 
 **Structured Toolsで意思決定**:
 ```python
@@ -689,11 +686,6 @@ def create_mcp_client() -> MultiServerMCPClient:
                 "command": "python",
                 "args": ["-m", "servers.ligand_server"]
             },
-            "assembly": {
-                "transport": "stdio",
-                "command": "python",
-                "args": ["-m", "servers.assembly_server"]
-            },
             "export": {
                 "transport": "stdio",
                 "command": "python",
@@ -1078,13 +1070,12 @@ src/mcp_md/    ← GENERATED CODE (直接編集禁止) 🚫
 
 - **固定スケルトン実装**（シンプルな直線的フロー）:
   ```python
-  # 6ステップの固定スケルトン
+  # 5ステップの固定スケルトン
   SETUP_STEPS = [
       "structure_fetch",
       "structure_repair", 
       "ligand_param",
       "complex_generation",
-      "assembly",
       "qc_check"
   ]
   
@@ -1518,7 +1509,6 @@ mcp-md/
 │   ├── genesis_server.py         # Boltz-2タンパク質生成
 │   ├── complex_server.py         # Boltz-2複合体、Sminaドッキング
 │   ├── ligand_server.py          # GAFF2/AM1-BCC パラメータ化
-│   ├── assembly_server.py        # tleap系構築、膜系
 │   ├── export_server.py          # Amber/GROMACS/OpenMM形式変換
 │   └── qc_min_server.py          # 最小化、QC検証
 │
@@ -1657,11 +1647,6 @@ def create_mcp_client() -> MultiServerMCPClient:
                 "command": "python",
                 "args": ["-m", "servers.ligand_server"]
             },
-            "assembly": {
-                "transport": "stdio",
-                "command": "python",
-                "args": ["-m", "servers.assembly_server"]
-            },
             "export": {
                 "transport": "stdio",
                 "command": "python",
@@ -1797,20 +1782,6 @@ async def create_workflow_graph():
 **新設計での位置づけ**:
 - Complex MCP に統合
 - Boltz-2複合体予測の補助ツールとして位置づけ
-
-### Phase 4: Assembly Server
-
-**実装ファイル**:
-- `servers/assembly_server.py` (156行)
-- `tools/ambertools_wrapper.py` - tleap統合
-- `tools/packmol_wrapper.py` (144行)
-
-**主要ツール**:
-1. `build_system_tleap`: 完全MD系構築
-2. `build_membrane_system`: Packmol-Memgen膜系
-
-**新設計での位置づけ**:
-- そのまま維持（Amber特化の核心）
 
 ### Phase 5: Protocol Server
 

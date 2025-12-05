@@ -654,11 +654,12 @@ def _estimate_physiological_charge(charge_info: Dict[str, Any], ph: float = 7.4)
 
 @mcp.tool()
 async def fetch_molecules(pdb_id: str, source: str = "pdb") -> dict:
-    """Fetch a structure file from PDB, AlphaFold, or PDB-REDO (prefer mmCIF if available).
+    """Fetch a structure file from PDB, AlphaFold, PDB-REDO, or OPM (prefer mmCIF if available).
 
     Args:
         pdb_id: Protein identifier, e.g., '1ABC'
-        source: Data source ('pdb', 'alphafold', or 'pdb-redo')
+        source: Data source ('pdb', 'alphafold', 'pdb-redo', or 'opm')
+                Use 'opm' for membrane proteins to get pre-oriented structures.
 
     Returns:
         Dict with:
@@ -690,7 +691,7 @@ async def fetch_molecules(pdb_id: str, source: str = "pdb") -> dict:
     pdb_id = pdb_id.upper()
     
     # Validate source
-    valid_sources = ["pdb", "alphafold", "pdb-redo"]
+    valid_sources = ["pdb", "alphafold", "pdb-redo", "opm"]
     if source not in valid_sources:
         result["errors"].append(f"Invalid source: '{source}'. Valid sources: {valid_sources}")
         logger.error(f"Invalid source: {source}")
@@ -736,6 +737,22 @@ async def fetch_molecules(pdb_id: str, source: str = "pdb") -> dict:
                 if r.status_code != 200:
                     result["errors"].append(f"PDB-REDO structure not found: {pdb_id} (HTTP {r.status_code})")
                     result["errors"].append(f"Hint: Not all PDB entries have PDB-REDO versions. Try source='pdb' instead.")
+                    return result
+                content = r.content
+
+        elif source == "opm":
+            # OPM provides pre-oriented membrane protein structures
+            # The structure is positioned with membrane normal along Z-axis
+            url = f"https://opm-assets.storage.googleapis.com/pdb/{pdb_id.lower()}.pdb"
+            ext = "pdb"
+            result["file_format"] = "pdb"
+            result["preoriented"] = True  # OPM structures are membrane-oriented
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.get(url)
+                if r.status_code != 200:
+                    result["errors"].append(f"OPM structure not found: {pdb_id} (HTTP {r.status_code})")
+                    result["errors"].append(f"Hint: Not all membrane proteins are in OPM. Check https://opm.phar.umich.edu/")
+                    result["errors"].append(f"Hint: For non-membrane proteins, use source='pdb' instead.")
                     return result
                 content = r.content
 
@@ -1134,6 +1151,7 @@ def split_molecules(
     output_dir: Optional[str] = None,
     select_chains: Optional[List[str]] = None,
     exclude_waters: bool = True,
+    use_author_chains: bool = False,
 ) -> dict:
     """Split an mmCIF or PDB structure file into separate chain files.
     
@@ -1141,8 +1159,8 @@ def split_molecules(
     protein, ligand, ion, and water. Output files are always in PDB format.
     Files are named as protein_1.pdb, ligand_1.pdb, ion_1.pdb, water_1.pdb, etc.
     
-    Uses mmCIF label_asym_id as unique chain identifiers, which allows handling
-    structures with many chains (not limited to 26 alphabet letters).
+    For mmCIF files, uses label_asym_id as unique chain identifiers.
+    For PDB files, can use either label_asym_id or author chain IDs (auth_asym_id).
     
     Tip: Use inspect_molecules first to understand the structure and identify
     which chains you want to extract.
@@ -1150,10 +1168,15 @@ def split_molecules(
     Args:
         structure_file: Path to the mmCIF (.cif) or PDB (.pdb) file to split.
         output_dir: Output directory (auto-generated if None).
-        select_chains: List of chain IDs to extract (uses label_asym_id, e.g., ['A', 'B']).
+        select_chains: List of chain IDs to extract.
+                       If use_author_chains=False: uses label_asym_id (e.g., ['A', 'Axp']).
+                       If use_author_chains=True: uses author chain IDs (e.g., ['A', 'B']).
                        Use inspect_molecules to find available chain IDs.
                        If None, extracts all chains except water.
         exclude_waters: Whether to exclude water molecules from the output.
+        use_author_chains: If True, select_chains matches author_chain (auth_asym_id)
+                          instead of chain_id (label_asym_id). Useful for PDB files
+                          where author chain IDs like 'A', 'B' are more intuitive.
 
     Returns:
         Dict with:
@@ -1239,16 +1262,33 @@ def split_molecules(
         
         # Determine which chains to select
         available_chain_ids = [c["chain_id"] for c in analysis["chains"]]
+        available_author_chains = list(set(c["author_chain"] for c in analysis["chains"]))
         summary = analysis["summary"]
         
         if select_chains is not None:
-            missing_chains = [ch for ch in select_chains if ch not in available_chain_ids]
-            if missing_chains:
-                result["errors"].append(f"Chain(s) not found: {missing_chains}")
-                result["errors"].append(f"Hint: Available chains: {available_chain_ids}")
-                logger.error(f"Requested chains not found: {missing_chains}")
-                return result
-            selected_chain_ids = set(select_chains)
+            if use_author_chains:
+                # Match by author_chain (auth_asym_id) - useful for PDB files
+                missing_chains = [ch for ch in select_chains if ch not in available_author_chains]
+                if missing_chains:
+                    result["errors"].append(f"Author chain(s) not found: {missing_chains}")
+                    result["errors"].append(f"Hint: Available author chains: {available_author_chains}")
+                    logger.error(f"Requested author chains not found: {missing_chains}")
+                    return result
+                # Find all chain_ids that match the selected author_chains
+                selected_chain_ids = set()
+                for c in analysis["chains"]:
+                    if c["author_chain"] in select_chains:
+                        selected_chain_ids.add(c["chain_id"])
+            else:
+                # Match by chain_id (label_asym_id) - default behavior
+                missing_chains = [ch for ch in select_chains if ch not in available_chain_ids]
+                if missing_chains:
+                    result["errors"].append(f"Chain(s) not found: {missing_chains}")
+                    result["errors"].append(f"Hint: Available chains (label_asym_id): {available_chain_ids}")
+                    result["errors"].append(f"Hint: For PDB files, try use_author_chains=True with author IDs: {available_author_chains}")
+                    logger.error(f"Requested chains not found: {missing_chains}")
+                    return result
+                selected_chain_ids = set(select_chains)
         else:
             # Default: select all non-water chains
             selected_chain_ids = set(
@@ -1288,7 +1328,12 @@ def split_molecules(
             # Build new structure with this chain's residues
             new_structure = gemmi.Structure()
             new_model = gemmi.Model("1")
-            new_chain = gemmi.Chain(chain_id)
+            # Use author_chain (single letter) for PDB compatibility
+            # label_asym_id can be too long for PDB format (e.g., "Axp" from OPM)
+            author_chain = info.get("author_chain", chain_id)
+            # Ensure chain name is max 1 character for PDB format
+            pdb_chain_name = author_chain[0] if len(author_chain) > 1 else (author_chain if author_chain else "A")
+            new_chain = gemmi.Chain(pdb_chain_name)
             residue_count = 0
             
             for residue in subchain:
@@ -2246,6 +2291,7 @@ def run_antechamber_robust(
             - success: bool - True if parameterization completed successfully
             - mol2: str - Path to GAFF-parameterized MOL2 file
             - frcmod: str - Path to force field modification file
+            - pdb: str - Path to atom-name-preserving PDB file (for merge_structures)
             - charge_used: int - Net charge that was used
             - charge_method: str - Charge method used
             - atom_type: str - Atom type used
@@ -2266,6 +2312,7 @@ def run_antechamber_robust(
         "success": False,
         "mol2": None,
         "frcmod": None,
+        "pdb": None,
         "charge_used": None,
         "charge_method": charge_method,
         "atom_type": atom_type,
@@ -2458,6 +2505,32 @@ def run_antechamber_robust(
             for warning in frcmod_validation["warnings"][:5]:
                 result["warnings"].append(f"frcmod: {warning}")
         
+        # Generate atom-name-preserving PDB from MOL2 using antechamber
+        # This PDB preserves atom names (C1, C2, N1...) that match the MOL2/frcmod
+        # Required for merge_structures and subsequent tleap processing
+        output_pdb = out_dir / f"{input_stem}.amber.pdb"
+        logger.info(f"Generating atom-name-preserving PDB: {output_pdb}")
+        
+        try:
+            pdb_args = [
+                '-i', str(output_mol2),
+                '-fi', 'mol2',
+                '-o', str(output_pdb),
+                '-fo', 'pdb',
+                '-dr', 'no'  # Don't remove intermediate files
+            ]
+            antechamber_wrapper.run(pdb_args, cwd=out_dir)
+            
+            if output_pdb.exists():
+                result["pdb"] = str(output_pdb)
+                logger.info(f"Successfully generated PDB: {output_pdb}")
+            else:
+                result["warnings"].append("PDB generation completed but file not created")
+                logger.warning("PDB generation completed but file not created")
+        except Exception as e:
+            result["warnings"].append(f"PDB generation failed: {str(e)}")
+            logger.warning(f"PDB generation failed: {e}")
+        
         # Save charge estimation to diagnostics
         if charge_estimation:
             with open(diag_dir / "charge_estimation.json", 'w') as f:
@@ -2496,6 +2569,210 @@ def run_antechamber_robust(
         
     except Exception as e:
         error_msg = f"Error during antechamber: {type(e).__name__}: {str(e)}"
+        result["errors"].append(error_msg)
+        logger.error(error_msg)
+    
+    return result
+
+
+@mcp.tool()
+def merge_structures(
+    pdb_files: List[str],
+    output_dir: Optional[str] = None,
+    output_name: str = "merged"
+) -> dict:
+    """Merge multiple PDB files into a single structure file.
+    
+    This tool combines multiple protein and ligand PDB files into one unified
+    structure suitable for solvation or membrane embedding with packmol-memgen.
+    
+    Chain IDs are automatically renamed to avoid conflicts:
+    - First 26 chains: A-Z
+    - Next 26 chains: a-z
+    - Additional chains: 0-9
+    
+    Atom names are preserved exactly as they appear in the input files,
+    which is critical for subsequent tleap processing with frcmod files.
+    
+    Args:
+        pdb_files: List of PDB file paths to merge. Accepts:
+                   - *.amber.pdb from clean_protein
+                   - *.amber.pdb from run_antechamber_robust (ligand with preserved atom names)
+                   - *.pdb for standard force field ligands (ATP, NAD, etc.)
+        output_dir: Output directory (auto-generated if None)
+        output_name: Base name for output file (default: "merged")
+    
+    Returns:
+        Dict with:
+            - success: bool - True if merge completed successfully
+            - job_id: str - Unique identifier for this operation
+            - output_file: str - Path to the merged PDB file
+            - output_dir: str - Output directory path
+            - input_files: list[str] - List of input file paths
+            - chain_mapping: dict - Mapping of {input_file: {original_chain: new_chain}}
+            - statistics: dict - Summary statistics (total_atoms, total_residues, etc.)
+            - errors: list[str] - Error messages (empty if success=True)
+            - warnings: list[str] - Non-critical issues encountered
+    
+    Example:
+        >>> result = merge_structures([
+        ...     "output/job1/protein_1.amber.pdb",
+        ...     "output/job1/ligand_1.amber.pdb"
+        ... ])
+        >>> print(result["output_file"])
+        'output/abc123/merged.pdb'
+    """
+    logger.info(f"Merging {len(pdb_files)} structure files")
+    
+    # Initialize result structure
+    job_id = generate_job_id()
+    result = {
+        "success": False,
+        "job_id": job_id,
+        "output_file": None,
+        "output_dir": None,
+        "input_files": pdb_files,
+        "chain_mapping": {},
+        "statistics": {
+            "total_atoms": 0,
+            "total_residues": 0,
+            "total_chains": 0,
+            "input_file_count": len(pdb_files)
+        },
+        "errors": [],
+        "warnings": []
+    }
+    
+    # Validate input
+    if not pdb_files:
+        result["errors"].append("No PDB files provided")
+        logger.error("No PDB files provided")
+        return result
+    
+    # Check for gemmi
+    try:
+        import gemmi
+    except ImportError:
+        result["errors"].append("gemmi library not installed")
+        result["errors"].append("Hint: Install with: pip install gemmi")
+        logger.error("gemmi not installed")
+        return result
+    
+    # Validate all input files exist
+    missing_files = []
+    for pdb_file in pdb_files:
+        if not Path(pdb_file).exists():
+            missing_files.append(pdb_file)
+    
+    if missing_files:
+        result["errors"].append(f"Files not found: {missing_files}")
+        logger.error(f"Files not found: {missing_files}")
+        return result
+    
+    # Setup output directory
+    if output_dir is None:
+        out_dir = WORKING_DIR / job_id
+    else:
+        out_dir = Path(output_dir) / job_id
+    ensure_directory(out_dir)
+    result["output_dir"] = str(out_dir)
+    
+    # Chain ID pool for renaming
+    chain_id_pool = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + \
+                    list("abcdefghijklmnopqrstuvwxyz") + \
+                    list("0123456789")
+    chain_id_index = 0
+    
+    try:
+        # Create new structure to hold merged result
+        merged_structure = gemmi.Structure()
+        merged_structure.name = output_name
+        merged_model = gemmi.Model("1")
+        
+        total_atoms = 0
+        total_residues = 0
+        
+        for pdb_file in pdb_files:
+            pdb_path = Path(pdb_file)
+            logger.info(f"Processing: {pdb_path.name}")
+            
+            # Read input structure
+            try:
+                input_structure = gemmi.read_pdb(str(pdb_path))
+            except Exception as e:
+                result["warnings"].append(f"Failed to read {pdb_path.name}: {str(e)}")
+                logger.warning(f"Failed to read {pdb_path.name}: {e}")
+                continue
+            
+            if len(input_structure) == 0:
+                result["warnings"].append(f"No models in {pdb_path.name}")
+                continue
+            
+            input_model = input_structure[0]
+            file_chain_mapping = {}
+            
+            for chain in input_model:
+                original_chain_id = chain.name
+                
+                # Assign new chain ID
+                if chain_id_index >= len(chain_id_pool):
+                    result["errors"].append(f"Too many chains (>{len(chain_id_pool)})")
+                    logger.error(f"Exceeded maximum chain count")
+                    return result
+                
+                new_chain_id = chain_id_pool[chain_id_index]
+                chain_id_index += 1
+                
+                file_chain_mapping[original_chain_id] = new_chain_id
+                
+                # Create new chain with new ID
+                new_chain = gemmi.Chain(new_chain_id)
+                
+                # Copy residues and atoms (preserving atom names exactly)
+                for residue in chain:
+                    new_residue = gemmi.Residue()
+                    new_residue.name = residue.name
+                    new_residue.seqid = residue.seqid
+                    new_residue.subchain = new_chain_id
+                    
+                    for atom in residue:
+                        new_atom = gemmi.Atom()
+                        new_atom.name = atom.name  # Preserve atom name exactly
+                        new_atom.pos = atom.pos
+                        new_atom.occ = atom.occ
+                        new_atom.b_iso = atom.b_iso
+                        new_atom.element = atom.element
+                        new_residue.add_atom(new_atom)
+                        total_atoms += 1
+                    
+                    if len(list(new_residue)) > 0:
+                        new_chain.add_residue(new_residue)
+                        total_residues += 1
+                
+                if len(list(new_chain)) > 0:
+                    merged_model.add_chain(new_chain)
+                    logger.info(f"  Chain {original_chain_id} -> {new_chain_id}")
+            
+            result["chain_mapping"][str(pdb_path)] = file_chain_mapping
+        
+        # Add model to structure
+        merged_structure.add_model(merged_model)
+        
+        # Write output
+        output_file = out_dir / f"{output_name}.pdb"
+        merged_structure.write_pdb(str(output_file))
+        
+        result["output_file"] = str(output_file)
+        result["statistics"]["total_atoms"] = total_atoms
+        result["statistics"]["total_residues"] = total_residues
+        result["statistics"]["total_chains"] = chain_id_index
+        result["success"] = True
+        
+        logger.info(f"Successfully merged {len(pdb_files)} files into {output_file}")
+        logger.info(f"  Total: {total_atoms} atoms, {total_residues} residues, {chain_id_index} chains")
+        
+    except Exception as e:
+        error_msg = f"Error during structure merging: {type(e).__name__}: {str(e)}"
         result["errors"].append(error_msg)
         logger.error(error_msg)
     

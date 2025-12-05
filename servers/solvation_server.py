@@ -1,0 +1,547 @@
+"""
+Solvation Server - Solvation and membrane embedding with FastMCP.
+
+Provides MCP tools for:
+- Solvating protein-ligand complexes in water boxes using packmol-memgen
+- Embedding proteins in lipid bilayer membranes with packmol-memgen
+- Adding ions and salt for physiological conditions
+
+Uses packmol-memgen from AmberTools for robust solvation and membrane building.
+"""
+
+import json
+import logging
+import os
+import sys
+import uuid
+from pathlib import Path
+from typing import List, Optional
+
+from mcp.server.fastmcp import FastMCP
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb
+from common.base import BaseToolWrapper
+
+
+def generate_job_id() -> str:
+    """Generate a unique job ID for tracking operations."""
+    return uuid.uuid4().hex[:8]
+
+
+logger = setup_logger(__name__)
+
+# Create FastMCP server
+mcp = FastMCP("Solvation Server")
+
+# Initialize working directory (use absolute path for conda run compatibility)
+WORKING_DIR = Path("output").resolve()
+ensure_directory(WORKING_DIR)
+
+# Initialize tool wrappers
+packmol_memgen_wrapper = BaseToolWrapper("packmol-memgen", conda_env="mcp-md")
+
+
+@mcp.tool()
+def solvate_structure(
+    pdb_file: str,
+    output_dir: Optional[str] = None,
+    output_name: str = "solvated",
+    dist: float = 15.0,
+    cubic: bool = True,
+    salt: bool = True,
+    salt_c: str = "Na+",
+    salt_a: str = "Cl-",
+    saltcon: float = 0.15,
+    overwrite: bool = True,
+    notprotonate: bool = True,
+    preoriented: bool = True,
+    keepligs: bool = True
+) -> dict:
+    """Solvate a protein-ligand complex in a water box using packmol-memgen.
+    
+    This tool creates a solvated system by surrounding the input structure
+    with water molecules and optionally adding salt ions for physiological
+    conditions.
+    
+    The output PDB file can be used for subsequent tleap processing to
+    generate Amber topology files for MD simulation.
+    
+    Args:
+        pdb_file: Input PDB file path (e.g., merged.pdb from merge_structures)
+        output_dir: Output directory (auto-generated if None)
+        output_name: Base name for output file (default: "solvated")
+        dist: Minimum distance from solute to box boundary in Angstroms (default: 15.0)
+        cubic: Use cubic box shape (default: True). If False, uses rectangular.
+        salt: Add salt ions (default: True)
+        salt_c: Cation type (default: "Na+"). Options: Na+, K+, etc.
+        salt_a: Anion type (default: "Cl-"). Options: Cl-, etc.
+        saltcon: Salt concentration in Molar (default: 0.15)
+        overwrite: Overwrite existing output files (default: True)
+        notprotonate: Skip protonation by reduce (default: True, assumes pre-protonated)
+        preoriented: Structure is pre-oriented (default: True, skips MEMEMBED)
+        keepligs: Keep ligands in the structure (default: True). Important when
+                  processing protein-ligand complexes.
+    
+    Returns:
+        Dict with:
+            - success: bool - True if solvation completed successfully
+            - job_id: str - Unique identifier for this operation
+            - output_file: str - Path to the solvated PDB file
+            - output_dir: str - Output directory path
+            - input_file: str - Input PDB file path
+            - parameters: dict - Parameters used for solvation
+            - packmol_log: str - Path to packmol log file (if available)
+            - statistics: dict - Box dimensions, atom counts, etc.
+            - errors: list[str] - Error messages (empty if success=True)
+            - warnings: list[str] - Non-critical issues encountered
+    
+    Example:
+        >>> result = solvate_structure(
+        ...     "output/job1/merged.pdb",
+        ...     dist=15.0,
+        ...     cubic=True,
+        ...     salt=True,
+        ...     saltcon=0.15
+        ... )
+        >>> print(result["output_file"])
+        'output/abc123/solvated.pdb'
+    """
+    logger.info(f"Solvating structure: {pdb_file}")
+    
+    # Initialize result structure
+    job_id = generate_job_id()
+    result = {
+        "success": False,
+        "job_id": job_id,
+        "output_file": None,
+        "output_dir": None,
+        "input_file": str(pdb_file),
+        "parameters": {
+            "dist": dist,
+            "cubic": cubic,
+            "salt": salt,
+            "salt_c": salt_c,
+            "salt_a": salt_a,
+            "saltcon": saltcon
+        },
+        "packmol_log": None,
+        "statistics": {},
+        "errors": [],
+        "warnings": []
+    }
+    
+    # Validate input file (resolve to absolute path for conda run compatibility)
+    pdb_path = Path(pdb_file).resolve()
+    if not pdb_path.exists():
+        result["errors"].append(f"Input PDB file not found: {pdb_file}")
+        logger.error(f"Input PDB file not found: {pdb_file}")
+        return result
+    
+    # Check packmol-memgen availability
+    if not packmol_memgen_wrapper.is_available():
+        result["errors"].append("packmol-memgen not found in PATH")
+        result["errors"].append("Hint: Install AmberTools or activate the mcp-md conda environment")
+        logger.error("packmol-memgen not available")
+        return result
+    
+    # Setup output directory
+    if output_dir is None:
+        out_dir = WORKING_DIR / job_id
+    else:
+        out_dir = Path(output_dir) / job_id
+    ensure_directory(out_dir)
+    result["output_dir"] = str(out_dir)
+    
+    # Copy input file to output directory for packmol-memgen
+    import shutil
+    input_copy = out_dir / pdb_path.name
+    shutil.copy(pdb_path, input_copy)
+    
+    # Output file
+    output_file = out_dir / f"{output_name}.pdb"
+    packlog = out_dir / f"{output_name}_packmol"
+    
+    try:
+        # Build packmol-memgen command
+        args = [
+            '--solvate',
+            '--dist', str(dist),
+            '--pdb', str(input_copy),
+            '-o', str(output_file),
+            '--packlog', str(packlog)
+        ]
+        
+        if cubic:
+            args.append('--cubic')
+        
+        if salt:
+            args.extend([
+                '--salt',
+                '--salt_c', salt_c,
+                '--salt_a', salt_a,
+                '--saltcon', str(saltcon)
+            ])
+        
+        if overwrite:
+            args.append('--overwrite')
+        
+        if notprotonate:
+            args.append('--notprotonate')
+        
+        if preoriented:
+            args.append('--preoriented')
+        
+        if keepligs:
+            args.append('--keepligs')
+        
+        logger.info(f"Running packmol-memgen with args: {' '.join(args)}")
+        
+        # Run packmol-memgen
+        proc_result = packmol_memgen_wrapper.run(args, cwd=out_dir, timeout=600)
+        
+        # Check if output was created
+        if output_file.exists():
+            result["output_file"] = str(output_file)
+            result["success"] = True
+            
+            # Get statistics
+            try:
+                atom_count = count_atoms_in_pdb(output_file)
+                result["statistics"]["total_atoms"] = atom_count
+            except Exception as e:
+                result["warnings"].append(f"Could not count atoms: {e}")
+            
+            # Find packmol log
+            log_file = out_dir / f"{output_name}_packmol.log"
+            if log_file.exists():
+                result["packmol_log"] = str(log_file)
+            
+            logger.info(f"Successfully solvated structure: {output_file}")
+        else:
+            result["errors"].append("packmol-memgen completed but output file not created")
+            result["errors"].append("Hint: Check packmol log for details")
+            logger.error("Output file not created")
+            
+            # Try to capture any error output
+            if proc_result.stderr:
+                result["errors"].append(f"stderr: {proc_result.stderr[:500]}")
+        
+    except Exception as e:
+        error_msg = f"Error during solvation: {type(e).__name__}: {str(e)}"
+        result["errors"].append(error_msg)
+        logger.error(error_msg)
+        
+        if "timeout" in str(e).lower():
+            result["errors"].append("Hint: Solvation timed out. Try reducing box size or simplifying the structure.")
+    
+    # Save metadata
+    metadata_file = out_dir / "solvation_metadata.json"
+    with open(metadata_file, 'w') as f:
+        json.dump(result, f, indent=2, default=str)
+    
+    return result
+
+
+@mcp.tool()
+def embed_in_membrane(
+    pdb_file: str,
+    output_dir: Optional[str] = None,
+    output_name: str = "membrane",
+    lipids: str = "POPC",
+    ratio: str = "1",
+    dist: float = 15.0,
+    dist_wat: float = 17.5,
+    leaflet: float = 23.0,
+    preoriented: bool = False,
+    salt: bool = True,
+    salt_c: str = "Na+",
+    salt_a: str = "Cl-",
+    saltcon: float = 0.15,
+    salt_override: bool = False,
+    overwrite: bool = True,
+    notprotonate: bool = True,
+    keepligs: bool = True,
+    nloop: int = 50,
+    nloop_all: int = 200
+) -> dict:
+    """Embed a protein in a lipid bilayer membrane using packmol-memgen.
+    
+    This tool creates a membrane-embedded system by:
+    1. Orienting the protein in the membrane (or using pre-oriented input)
+    2. Building a lipid bilayer around the protein
+    3. Solvating with water above and below the membrane
+    4. Optionally adding salt ions
+    
+    The output PDB file can be used for subsequent tleap processing to
+    generate Amber topology files for membrane MD simulation.
+    
+    Args:
+        pdb_file: Input PDB file path (e.g., merged.pdb from merge_structures)
+        output_dir: Output directory (auto-generated if None)
+        output_name: Base name for output file (default: "membrane")
+        lipids: Lipid composition (default: "POPC")
+                Single lipid: "POPC"
+                Mixed: "DOPE:DOPG" (separated by colon)
+                Per leaflet: "POPC//POPE" (separated by //)
+        ratio: Lipid ratio matching lipids order (default: "1")
+               Mixed: "3:1" for 3:1 ratio
+               Per leaflet: "2:1//1:2"
+        dist: Distance from protein to membrane boundary (default: 15.0)
+        dist_wat: Water layer thickness above/below membrane (default: 17.5)
+        leaflet: Leaflet width in Angstroms (default: 23.0)
+        preoriented: Protein is pre-oriented for membrane (default: False)
+                     Set to True if using OPM-derived structures or PPM server output.
+                     If False, MEMEMBED will orient the protein automatically.
+        salt: Add salt ions (default: True)
+        salt_c: Cation type (default: "Na+")
+        salt_a: Anion type (default: "Cl-")
+        saltcon: Salt concentration in Molar (default: 0.15)
+        salt_override: Continue even if salt concentration is less than needed for
+                       neutralization (default: False). Useful for charged lipids.
+        overwrite: Overwrite existing output files (default: True)
+        notprotonate: Skip protonation (default: True, assumes pre-protonated)
+        keepligs: Keep ligands in the structure (default: True). Important when
+                  processing protein-ligand complexes with MEMEMBED.
+        nloop: PACKMOL GENCAN loops for individual packing (default: 50)
+        nloop_all: PACKMOL GENCAN loops for final packing (default: 200)
+    
+    Returns:
+        Dict with:
+            - success: bool - True if embedding completed successfully
+            - job_id: str - Unique identifier for this operation
+            - output_file: str - Path to the membrane-embedded PDB file
+            - output_dir: str - Output directory path
+            - input_file: str - Input PDB file path
+            - parameters: dict - Parameters used for membrane building
+            - packmol_log: str - Path to packmol log file (if available)
+            - statistics: dict - Box dimensions, lipid counts, etc.
+            - errors: list[str] - Error messages (empty if success=True)
+            - warnings: list[str] - Non-critical issues encountered
+    
+    Example:
+        >>> # Single lipid membrane
+        >>> result = embed_in_membrane(
+        ...     "output/job1/merged.pdb",
+        ...     lipids="POPC",
+        ...     ratio="1",
+        ...     preoriented=True
+        ... )
+        
+        >>> # Mixed lipid membrane (bacterial-like)
+        >>> result = embed_in_membrane(
+        ...     "output/job1/merged.pdb",
+        ...     lipids="DOPE:DOPG",
+        ...     ratio="3:1",
+        ...     preoriented=True
+        ... )
+    """
+    logger.info(f"Embedding structure in membrane: {pdb_file}")
+    
+    # Initialize result structure
+    job_id = generate_job_id()
+    result = {
+        "success": False,
+        "job_id": job_id,
+        "output_file": None,
+        "output_dir": None,
+        "input_file": str(pdb_file),
+        "parameters": {
+            "lipids": lipids,
+            "ratio": ratio,
+            "dist": dist,
+            "dist_wat": dist_wat,
+            "leaflet": leaflet,
+            "preoriented": preoriented,
+            "salt": salt,
+            "salt_c": salt_c,
+            "salt_a": salt_a,
+            "saltcon": saltcon,
+            "salt_override": salt_override
+        },
+        "packmol_log": None,
+        "statistics": {},
+        "errors": [],
+        "warnings": []
+    }
+    
+    # Validate input file (resolve to absolute path for conda run compatibility)
+    pdb_path = Path(pdb_file).resolve()
+    if not pdb_path.exists():
+        result["errors"].append(f"Input PDB file not found: {pdb_file}")
+        logger.error(f"Input PDB file not found: {pdb_file}")
+        return result
+    
+    # Check packmol-memgen availability
+    if not packmol_memgen_wrapper.is_available():
+        result["errors"].append("packmol-memgen not found in PATH")
+        result["errors"].append("Hint: Install AmberTools or activate the mcp-md conda environment")
+        logger.error("packmol-memgen not available")
+        return result
+    
+    # Setup output directory
+    if output_dir is None:
+        out_dir = WORKING_DIR / job_id
+    else:
+        out_dir = Path(output_dir) / job_id
+    ensure_directory(out_dir)
+    result["output_dir"] = str(out_dir)
+    
+    # Copy input file to output directory for packmol-memgen
+    import shutil
+    input_copy = out_dir / pdb_path.name
+    shutil.copy(pdb_path, input_copy)
+    
+    # Output file
+    output_file = out_dir / f"{output_name}.pdb"
+    packlog = out_dir / f"{output_name}_packmol"
+    
+    try:
+        # Build packmol-memgen command
+        args = [
+            '--lipids', lipids,
+            '--ratio', ratio,
+            '--dist', str(dist),
+            '--dist_wat', str(dist_wat),
+            '--leaflet', str(leaflet),
+            '--pdb', str(input_copy),
+            '-o', str(output_file),
+            '--packlog', str(packlog),
+            '--nloop', str(nloop),
+            '--nloop_all', str(nloop_all)
+        ]
+        
+        if preoriented:
+            args.append('--preoriented')
+        
+        if salt:
+            args.extend([
+                '--salt',
+                '--salt_c', salt_c,
+                '--salt_a', salt_a,
+                '--saltcon', str(saltcon)
+            ])
+            if salt_override:
+                args.append('--salt_override')
+        
+        if overwrite:
+            args.append('--overwrite')
+        
+        if notprotonate:
+            args.append('--notprotonate')
+        
+        if keepligs:
+            args.append('--keepligs')
+        
+        logger.info(f"Running packmol-memgen with args: {' '.join(args)}")
+        
+        # Run packmol-memgen (membrane building can take longer)
+        proc_result = packmol_memgen_wrapper.run(args, cwd=out_dir, timeout=1800)
+        
+        # Check if output was created
+        if output_file.exists():
+            result["output_file"] = str(output_file)
+            result["success"] = True
+            
+            # Get statistics
+            try:
+                atom_count = count_atoms_in_pdb(output_file)
+                result["statistics"]["total_atoms"] = atom_count
+            except Exception as e:
+                result["warnings"].append(f"Could not count atoms: {e}")
+            
+            # Find packmol log
+            log_file = out_dir / f"{output_name}_packmol.log"
+            if log_file.exists():
+                result["packmol_log"] = str(log_file)
+            
+            logger.info(f"Successfully embedded structure in membrane: {output_file}")
+        else:
+            result["errors"].append("packmol-memgen completed but output file not created")
+            result["errors"].append("Hint: Check packmol log for details")
+            logger.error("Output file not created")
+            
+            # Try to capture any error output
+            if proc_result.stderr:
+                result["errors"].append(f"stderr: {proc_result.stderr[:500]}")
+        
+    except Exception as e:
+        error_msg = f"Error during membrane embedding: {type(e).__name__}: {str(e)}"
+        result["errors"].append(error_msg)
+        logger.error(error_msg)
+        
+        if "timeout" in str(e).lower():
+            result["errors"].append("Hint: Membrane building timed out. Try reducing nloop values or simplifying the structure.")
+    
+    # Save metadata
+    metadata_file = out_dir / "membrane_metadata.json"
+    with open(metadata_file, 'w') as f:
+        json.dump(result, f, indent=2, default=str)
+    
+    return result
+
+
+@mcp.tool()
+def list_available_lipids() -> dict:
+    """List available lipid types supported by packmol-memgen.
+    
+    Returns a list of commonly used lipid types and their descriptions.
+    For the complete list, run: packmol-memgen --available_lipids
+    
+    Returns:
+        Dict with:
+            - success: bool - True if listing completed
+            - common_lipids: dict - Common lipids with descriptions
+            - categories: dict - Lipids organized by category
+            - hint: str - How to get full list
+            - errors: list[str] - Error messages (empty if success=True)
+    """
+    result = {
+        "success": True,
+        "common_lipids": {
+            # Phosphatidylcholines (PC)
+            "POPC": "1-palmitoyl-2-oleoyl-sn-glycero-3-phosphocholine (most common)",
+            "DOPC": "1,2-dioleoyl-sn-glycero-3-phosphocholine",
+            "DPPC": "1,2-dipalmitoyl-sn-glycero-3-phosphocholine",
+            "DMPC": "1,2-dimyristoyl-sn-glycero-3-phosphocholine",
+            
+            # Phosphatidylethanolamines (PE)
+            "POPE": "1-palmitoyl-2-oleoyl-sn-glycero-3-phosphoethanolamine",
+            "DOPE": "1,2-dioleoyl-sn-glycero-3-phosphoethanolamine",
+            
+            # Phosphatidylglycerols (PG)
+            "POPG": "1-palmitoyl-2-oleoyl-sn-glycero-3-phospho-(1'-rac-glycerol)",
+            "DOPG": "1,2-dioleoyl-sn-glycero-3-phospho-(1'-rac-glycerol)",
+            
+            # Phosphatidylserines (PS)
+            "POPS": "1-palmitoyl-2-oleoyl-sn-glycero-3-phospho-L-serine",
+            "DOPS": "1,2-dioleoyl-sn-glycero-3-phospho-L-serine",
+            
+            # Cholesterol
+            "CHL1": "Cholesterol",
+            
+            # Sphingomyelin
+            "PSM": "N-palmitoyl-sphingomyelin"
+        },
+        "categories": {
+            "mammalian_plasma_membrane": ["POPC", "POPE", "POPS", "PSM", "CHL1"],
+            "bacterial_inner_membrane": ["POPE", "POPG"],
+            "bacterial_outer_membrane": ["DOPE", "DOPG"],
+            "simple_model": ["POPC", "DPPC", "DMPC"],
+            "raft_model": ["DPPC", "DOPC", "CHL1"]
+        },
+        "example_compositions": {
+            "simple": {"lipids": "POPC", "ratio": "1"},
+            "mammalian": {"lipids": "POPC:POPE:CHL1", "ratio": "2:1:1"},
+            "bacterial": {"lipids": "DOPE:DOPG", "ratio": "3:1"}
+        },
+        "hint": "For complete list: packmol-memgen --available_lipids",
+        "errors": []
+    }
+    
+    return result
+
+
+if __name__ == "__main__":
+    mcp.run()
+

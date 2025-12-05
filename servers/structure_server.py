@@ -2,10 +2,12 @@
 Structure Server - PDB retrieval and structure cleaning with FastMCP.
 
 Provides MCP tools for:
-- Fetching structures from PDB/AlphaFold
-- PDBFixer structure cleaning
-- Protonation with PDB2PQR
-- Structure validation
+- Automatic retrieval of structure files from PDB/AlphaFold/PDB-REDO (prefers mmCIF)
+- Chain separation and classification using gemmi
+- Structure cleaning, missing residue modeling, water/heterogen removal, and protonation using PDBFixer
+- Automatic detection of disulfide bonds and CYS->CYX renaming
+- Mutation modeling with FASPR
+- LLM-friendly structure validation and error reporting at each step
 """
 
 import httpx
@@ -140,8 +142,30 @@ async def fetch_molecules(pdb_id: str, source: str = "pdb") -> dict:
         
         result["file_path"] = str(output_file)
         
-        # Get structure statistics
+        # Get structure statistics using gemmi for accurate parsing
         try:
+            import gemmi
+            if ext == "cif":
+                doc = gemmi.cif.read(str(output_file))
+                block = doc[0]
+                st = gemmi.make_structure_from_block(block)
+            else:
+                st = gemmi.read_pdb(str(output_file))
+            st.setup_entities()
+            
+            # Count atoms
+            atom_count = sum(1 for model in st for chain in model for res in chain for atom in res)
+            result["num_atoms"] = atom_count
+            
+            # Get unique chain IDs using label_asym_id (subchain_id)
+            # This is the unique identifier used by split_molecules
+            chain_ids = []
+            model = st[0]
+            for subchain in model.subchains():
+                chain_ids.append(subchain.subchain_id())
+            result["chains"] = chain_ids
+        except ImportError:
+            # Fall back to simple parsing if gemmi not available
             result["num_atoms"] = count_atoms_in_pdb(output_file)
             result["chains"] = get_pdb_chains(output_file)
         except Exception as e:
@@ -182,12 +206,16 @@ def split_molecules(
     Split an mmCIF or PDB structure file into 'protein' and 'non_protein' chain files (one file per chain).
     Regardless of input format, output files are written in PDB format only.
     Files are named as protein_1.pdb, protein_2.pdb, non_protein_1.pdb, ... etc.
+    
+    Uses mmCIF label_asym_id as unique chain identifiers, which allows handling
+    structures with many chains (not limited to 26 alphabet letters).
 
     Args:
         structure_file: Path to the mmCIF (.cif) or PDB (.pdb) file to split.
         output_dir: Output directory (auto-generated if None).
-        select_chains: List of chain IDs to extract (e.g., ['A']). 
-                       If None, extracts all chains.
+        select_chains: List of chain IDs to extract (uses label_asym_id, e.g., ['A', 'B']).
+                       For mmCIF: A/B=protein, C/D=ligand, E/F=water (example)
+                       If None, extracts all chains except water.
         exclude_waters: Whether to exclude water molecules from the output.
 
     Returns:
@@ -199,7 +227,7 @@ def split_molecules(
             - file_format: str - Output format (always 'pdb')
             - protein_files: list[str] - Paths to protein chain files
             - non_protein_files: list[str] - Paths to non-protein chain files
-            - all_chains: list[dict] - Metadata for all chains found
+            - all_chains: list[dict] - Metadata for all chains found (with chain_id = label_asym_id)
             - chain_file_info: list[dict] - Mapping of chains to output files
             - errors: list[str] - Error messages (empty if success=True)
             - warnings: list[str] - Non-critical issues encountered
@@ -273,31 +301,68 @@ def split_molecules(
         }
         WATER_NAMES = {'HOH', 'WAT', 'H2O', 'DOD', 'D2O'}
 
+        # Use model.subchains() to get unique chain entities
+        # In mmCIF, label_asym_id (subchain_id) is unique for each entity
+        # This allows unlimited chains (not limited to 26 alphabet letters)
+        model = structure[0]  # Use first model
+        
         all_chains = []
+        chain_info = {}  # chain_id (label_asym_id) -> {author_chain, is_protein, is_water, ...}
         protein_chain_ids = []
         non_protein_chain_ids = []
-        chain_types = {}   # chain_name -> "protein" or "non_protein"
+        water_chain_ids = []
 
-        for model in structure:
+        for subchain in model.subchains():
+            chain_id = subchain.subchain_id()  # label_asym_id - unique identifier
+            res_list = list(subchain)
+            if not res_list:
+                continue
+            
+            # Determine chain type by checking residue names
+            has_protein = False
+            has_water = False
+            for res in res_list:
+                res_name = res.name.strip()
+                if res_name in AMINO_ACIDS:
+                    has_protein = True
+                    break
+                if res_name in WATER_NAMES:
+                    has_water = True
+            
+            # Get the author chain name (auth_asym_id) from the parent chain
+            author_chain = None
             for chain in model:
-                chain_name = chain.name
-                has_protein = False
-                for residue in chain:
-                    res_name = residue.name.strip()
-                    if res_name in AMINO_ACIDS:
-                        has_protein = True
+                for chain_subchain in chain.subchains():
+                    if chain_subchain.subchain_id() == chain_id:
+                        author_chain = chain.name
                         break
-                is_protein = has_protein
-                if is_protein:
-                    protein_chain_ids.append(chain_name)
-                    chain_types[chain_name] = "protein"
-                else:
-                    non_protein_chain_ids.append(chain_name)
-                    chain_types[chain_name] = "non_protein"
-                all_chains.append({
-                    "name": chain_name,
-                    "is_protein": is_protein
-                })
+                if author_chain:
+                    break
+            
+            if author_chain is None:
+                author_chain = chain_id  # Fallback
+            
+            chain_info[chain_id] = {
+                "author_chain": author_chain,
+                "is_protein": has_protein,
+                "is_water": has_water,
+                "num_residues": len(res_list)
+            }
+            
+            if has_protein:
+                protein_chain_ids.append(chain_id)
+            elif has_water:
+                water_chain_ids.append(chain_id)
+            else:  # Non-protein, non-water = ligand
+                non_protein_chain_ids.append(chain_id)
+            
+            all_chains.append({
+                "chain_id": chain_id,  # Primary identifier (label_asym_id)
+                "author_chain": author_chain,  # Original author chain ID (auth_asym_id)
+                "is_protein": has_protein,
+                "is_water": has_water,
+                "num_residues": len(res_list)
+            })
 
         result["all_chains"] = all_chains
         
@@ -308,86 +373,112 @@ def split_molecules(
             logger.error("No chains found in structure")
             return result
 
-        # Optionally select only specified chains
+        # Determine which chains to select using chain_id (label_asym_id)
+        available_chain_ids = [c['chain_id'] for c in all_chains]
+        
         if select_chains is not None:
-            available = {c['name'] for c in all_chains}
-            missing_chains = [ch for ch in select_chains if ch not in available]
+            missing_chains = [ch for ch in select_chains if ch not in available_chain_ids]
             if missing_chains:
                 result["errors"].append(f"Chain(s) not found: {missing_chains}")
-                result["errors"].append(f"Hint: Available chains: {sorted(available)}")
+                result["errors"].append(f"Hint: Available chains: {available_chain_ids}")
                 logger.error(f"Requested chains not found: {missing_chains}")
                 return result
-            selected_chain_names = select_chains
+            selected_chain_ids = set(select_chains)
         else:
-            selected_chain_names = [c['name'] for c in all_chains]
+            # Default: select all non-water chains
+            selected_chain_ids = set(protein_chain_ids + non_protein_chain_ids)
+            if not exclude_waters:
+                selected_chain_ids.update(water_chain_ids)
 
-        logger.info(f"Chains to export: {selected_chain_names}")
+        logger.info(f"Chains to export: {sorted(selected_chain_ids)}")
         logger.info(f"Protein chains: {protein_chain_ids}")
-        logger.info(f"Non-protein chains: {non_protein_chain_ids}")
+        logger.info(f"Non-protein chains (ligands): {non_protein_chain_ids}")
+        logger.info(f"Water chains: {water_chain_ids}")
 
-        # Write each chain to a separate PDB file, classify as protein or non-protein
+        # Write each chain to a separate PDB file
         protein_files = []
         non_protein_files = []
         protein_idx = 1
         non_protein_idx = 1
         chain_file_info = []
 
-        for model in structure:
-            for chain in model:
-                chain_name = chain.name
-                if chain_name not in selected_chain_names:
+        for subchain in model.subchains():
+            chain_id = subchain.subchain_id()  # label_asym_id
+            if chain_id not in selected_chain_ids:
+                continue
+            
+            info = chain_info[chain_id]
+            is_protein = info["is_protein"]
+            is_water = info["is_water"]
+            
+            # Skip water if exclude_waters is True
+            if exclude_waters and is_water:
+                continue
+            
+            # Determine chain type for output
+            if is_protein:
+                chain_type = "protein"
+            elif is_water:
+                chain_type = "water"
+            else:
+                chain_type = "non_protein"
+            
+            # Build new structure with this chain's residues
+            # Use chain_id (label_asym_id) as the chain name in output PDB
+            new_structure = gemmi.Structure()
+            new_model = gemmi.Model("1")
+            new_chain = gemmi.Chain(chain_id)  # Use unique label_asym_id
+            residue_count = 0
+            
+            for residue in subchain:
+                res_name = residue.name.strip()
+                if exclude_waters and res_name in WATER_NAMES:
                     continue
-                chain_type = chain_types[chain_name]
-                new_structure = gemmi.Structure()
-                new_model = gemmi.Model("1")
-                new_chain = gemmi.Chain(chain_name)
-                residue_count = 0
-                for residue in chain:
-                    res_name = residue.name.strip()
-                    if exclude_waters and res_name in WATER_NAMES:
-                        continue
-                    # Keep all residues for this chain
-                    new_residue = gemmi.Residue()
-                    new_residue.name = residue.name
-                    new_residue.seqid = residue.seqid
-                    new_residue.subchain = residue.subchain
-                    seen_atom_names = set()
-                    for atom in residue:
-                        altloc_char = atom.altloc
-                        if altloc_char in ('\x00', '', 'A', ' '):
-                            if atom.name not in seen_atom_names:
-                                new_atom = gemmi.Atom()
-                                new_atom.name = atom.name
-                                new_atom.pos = atom.pos
-                                new_atom.occ = atom.occ
-                                new_atom.b_iso = atom.b_iso
-                                new_atom.element = atom.element
-                                new_residue.add_atom(new_atom)
-                                seen_atom_names.add(atom.name)
-                    if len(list(new_residue)) > 0:
-                        new_chain.add_residue(new_residue)
-                        residue_count += 1
-                        
-                if len(list(new_chain)):
-                    new_model.add_chain(new_chain)
-                    new_structure.add_model(new_model)
-                    # Always output as .pdb (even if input is .cif)
-                    if chain_type == "protein":
-                        out_file = out_dir / f"protein_{protein_idx}.pdb"
-                        protein_files.append(str(out_file))
-                        protein_idx += 1
-                    else:
-                        out_file = out_dir / f"non_protein_{non_protein_idx}.pdb"
-                        non_protein_files.append(str(out_file))
-                        non_protein_idx += 1
-                    new_structure.write_pdb(str(out_file))
-                    logger.info(f"Wrote {chain_type}: {out_file}")
-                    chain_file_info.append({
-                        "chain": chain_name, 
-                        "chain_type": chain_type,
-                        "file": str(out_file),
-                        "residue_count": residue_count
-                    })
+                
+                new_residue = gemmi.Residue()
+                new_residue.name = residue.name
+                new_residue.seqid = residue.seqid
+                new_residue.subchain = residue.subchain
+                seen_atom_names = set()
+                for atom in residue:
+                    altloc_char = atom.altloc
+                    if altloc_char in ('\x00', '', 'A', ' '):
+                        if atom.name not in seen_atom_names:
+                            new_atom = gemmi.Atom()
+                            new_atom.name = atom.name
+                            new_atom.pos = atom.pos
+                            new_atom.occ = atom.occ
+                            new_atom.b_iso = atom.b_iso
+                            new_atom.element = atom.element
+                            new_residue.add_atom(new_atom)
+                            seen_atom_names.add(atom.name)
+                if len(list(new_residue)) > 0:
+                    new_chain.add_residue(new_residue)
+                    residue_count += 1
+            
+            if len(list(new_chain)):
+                new_model.add_chain(new_chain)
+                new_structure.add_model(new_model)
+                
+                # Always output as .pdb (even if input is .cif)
+                if chain_type == "protein":
+                    out_file = out_dir / f"protein_{protein_idx}.pdb"
+                    protein_files.append(str(out_file))
+                    protein_idx += 1
+                else:
+                    out_file = out_dir / f"non_protein_{non_protein_idx}.pdb"
+                    non_protein_files.append(str(out_file))
+                    non_protein_idx += 1
+                
+                new_structure.write_pdb(str(out_file))
+                logger.info(f"Wrote {chain_type}: {out_file}")
+                chain_file_info.append({
+                    "chain_id": chain_id,  # Primary identifier (label_asym_id)
+                    "author_chain": info["author_chain"],  # Original author chain ID
+                    "chain_type": chain_type,
+                    "file": str(out_file),
+                    "residue_count": residue_count
+                })
 
         result["protein_files"] = protein_files
         result["non_protein_files"] = non_protein_files
@@ -423,8 +514,8 @@ def split_molecules(
 @mcp.tool()
 def clean_protein(
     pdb_file: str,
-    cap_termini: bool = True,
-    ignore_terminal_missing_residues: bool = False,
+    ignore_terminal_missing_residues: bool = True,
+    cap_termini: bool = False,
     replace_nonstandard_residues: bool = True,
     remove_heterogens: bool = True,
     keep_water: bool = False,
@@ -436,12 +527,16 @@ def clean_protein(
     
     This tool processes a single-chain protein structure (from split_molecules output)
     and prepares it for MD simulation by fixing missing residues, atoms, and adding
-    proper termini caps and protonation.
+    proper protonation.
     
     Args:
         pdb_file: Input protein PDB or mmCIF file path (single chain from split_molecules)
-        cap_termini: Add ACE cap to N-terminus and NME cap to C-terminus (default: True)
-        ignore_terminal_missing_residues: Ignore missing residues at chain termini instead of modeling them (default: False)
+        ignore_terminal_missing_residues: Ignore missing residues at chain termini 
+                                          instead of modeling them (default: True)
+        cap_termini: Flag to indicate that ACE/NME caps should be added to termini.
+                     Note: PDBFixer cannot add caps directly. When True, the return dict
+                     will include cap_termini_required=True to indicate that tleap should
+                     be used to add caps during system building. (default: False)
         replace_nonstandard_residues: Replace non-standard residues with standard ones (default: True)
         remove_heterogens: Remove heteroatoms (ligands, ions, etc.) (default: True)
         keep_water: Keep water molecules when removing heterogens (default: False)
@@ -454,6 +549,7 @@ def clean_protein(
             - success: bool - True if cleaning completed without critical errors
             - output_file: str - Path to the cleaned PDB file (*.clean.pdb)
             - input_file: str - Original input file path
+            - cap_termini_required: bool - True if ACE/NME caps need to be added via tleap
             - operations: list[dict] - Details of each operation performed
             - warnings: list[str] - Non-critical issues encountered
             - errors: list[str] - Critical errors (empty if success=True)
@@ -468,6 +564,7 @@ def clean_protein(
         "success": False,
         "output_file": None,
         "input_file": str(pdb_file),
+        "cap_termini_required": False,
         "operations": [],
         "warnings": [],
         "errors": [],
@@ -504,61 +601,67 @@ def clean_protein(
             "details": f"Loaded {len(initial_chains)} chain(s), {len(initial_residues)} residue(s)"
         })
         
-        # Step 1: Handle missing residues
+        # Step 1: Handle missing residues and terminal caps
         logger.info("Finding missing residues")
         fixer.findMissingResidues()
         num_missing_residues = len(fixer.missingResidues)
         
-        if num_missing_residues > 0:
-            missing_info = []
-            for (chain_idx, res_idx), residues in fixer.missingResidues.items():
-                missing_info.append(f"Chain {chain_idx}, position {res_idx}: {residues}")
+        # Get chain information for terminal handling
+        chains = list(fixer.topology.chains())
+        
+        # Step 1a: Handle terminal missing residues
+        if ignore_terminal_missing_residues and not cap_termini:
+            # Remove terminal missing residues from the dictionary
+            keys_to_remove = []
+            for key in list(fixer.missingResidues.keys()):
+                chain_idx, res_idx = key
+                chain = chains[chain_idx]
+                chain_length = len(list(chain.residues()))
+                if res_idx == 0 or res_idx == chain_length:
+                    keys_to_remove.append(key)
             
-            if ignore_terminal_missing_residues:
-                # Remove terminal missing residues from the dictionary
-                chains = list(fixer.topology.chains())
-                keys_to_remove = []
-                for key in fixer.missingResidues.keys():
-                    chain_idx, res_idx = key
-                    chain = chains[chain_idx]
-                    chain_length = len(list(chain.residues()))
-                    if res_idx == 0 or res_idx == chain_length:
-                        keys_to_remove.append(key)
-                
-                for key in keys_to_remove:
-                    del fixer.missingResidues[key]
-                
+            for key in keys_to_remove:
+                del fixer.missingResidues[key]
+            
+            if keys_to_remove:
                 result["operations"].append({
                     "step": "missing_residues",
                     "status": "modified",
                     "details": f"Found {num_missing_residues} missing residue(s), ignored {len(keys_to_remove)} terminal missing residue(s)"
                 })
                 result["warnings"].append(f"Ignored {len(keys_to_remove)} terminal missing residue(s)")
-                
-            elif cap_termini:
-                # Replace terminal missing residues with ACE/NME caps
-                chains_to_cap = {chain_idx for chain_idx, _ in fixer.missingResidues}
-                for chain_idx in chains_to_cap:
-                    chain = list(fixer.topology.chains())[chain_idx]
-                    last_resi = len(list(chain.residues()))
-                    # Only add caps if there are missing residues at termini
-                    if (chain_idx, 0) in fixer.missingResidues:
-                        fixer.missingResidues[chain_idx, 0] = ['ACE']
-                    if (chain_idx, last_resi) in fixer.missingResidues:
-                        fixer.missingResidues[chain_idx, last_resi] = ['NME']
-                
-                result["operations"].append({
-                    "step": "missing_residues",
-                    "status": "capped",
-                    "details": f"Found {num_missing_residues} missing residue(s), terminal residues replaced with ACE/NME caps"
-                })
-            else:
-                result["operations"].append({
-                    "step": "missing_residues", 
-                    "status": "will_model",
-                    "details": f"Found {num_missing_residues} missing residue(s) to be modeled: {missing_info}"
-                })
-        else:
+        
+        # Step 1b: Add ACE/NME caps if requested
+        if cap_termini:
+            capped_chains = []
+            for chain_idx, chain in enumerate(chains):
+                chain_length = len(list(chain.residues()))
+                # Force add ACE cap at N-terminus (position 0)
+                fixer.missingResidues[chain_idx, 0] = ['ACE']
+                # Force add NME cap at C-terminus (position after last residue)
+                fixer.missingResidues[chain_idx, chain_length] = ['NME']
+                capped_chains.append(chain.id)
+            
+            result["operations"].append({
+                "step": "terminal_caps",
+                "status": "added_to_missing",
+                "details": f"Added ACE/NME caps as missing residues for {len(capped_chains)} chain(s): {capped_chains}"
+            })
+            logger.info(f"Added ACE/NME caps to missingResidues for chains: {capped_chains}")
+        
+        # Report remaining missing residues (excluding caps)
+        internal_missing = []
+        for (chain_idx, res_idx), residues in fixer.missingResidues.items():
+            if residues not in [['ACE'], ['NME']]:
+                internal_missing.append(f"Chain {chain_idx}, position {res_idx}: {residues}")
+        
+        if internal_missing:
+            result["operations"].append({
+                "step": "missing_residues", 
+                "status": "will_model",
+                "details": f"Found {len(internal_missing)} internal missing residue(s) to be modeled: {internal_missing}"
+            })
+        elif num_missing_residues == 0 and not cap_termini:
             result["operations"].append({
                 "step": "missing_residues",
                 "status": "none_found",
@@ -614,28 +717,36 @@ def clean_protein(
             })
             result["warnings"].append("Heterogens not removed - may cause issues in MD simulation")
         
-        # Step 4: Add missing atoms
+        # Step 4: Add missing atoms and residues (including ACE/NME caps)
         if add_missing_atoms:
             logger.info("Finding and adding missing atoms")
             fixer.findMissingAtoms()
             
             num_missing_atoms = sum(len(atoms) for atoms in fixer.missingAtoms.values())
             num_missing_terminals = sum(len(atoms) for atoms in fixer.missingTerminals.values())
-            total_missing = num_missing_atoms + num_missing_terminals
+            num_missing_residues = len(fixer.missingResidues)
             
-            if total_missing > 0:
+            # Always call addMissingAtoms if there are missing atoms OR missing residues (caps)
+            if num_missing_atoms > 0 or num_missing_terminals > 0 or num_missing_residues > 0:
                 fixer.addMissingAtoms()
+                details_parts = []
+                if num_missing_atoms > 0:
+                    details_parts.append(f"{num_missing_atoms} missing atom(s)")
+                if num_missing_terminals > 0:
+                    details_parts.append(f"{num_missing_terminals} terminal atom(s)")
+                if num_missing_residues > 0:
+                    details_parts.append(f"{num_missing_residues} missing residue(s)")
                 result["operations"].append({
                     "step": "missing_atoms",
                     "status": "added",
-                    "details": f"Added {num_missing_atoms} missing atom(s) and {num_missing_terminals} terminal atom(s)"
+                    "details": f"Added {', '.join(details_parts)}"
                 })
-                logger.info(f"Added {total_missing} missing atoms")
+                logger.info(f"Added missing atoms/residues: {', '.join(details_parts)}")
             else:
                 result["operations"].append({
                     "step": "missing_atoms",
                     "status": "none_found",
-                    "details": "No missing atoms found"
+                    "details": "No missing atoms or residues found"
                 })
         else:
             result["operations"].append({
@@ -740,7 +851,10 @@ def clean_protein(
             })
             result["warnings"].append("Hydrogens not added - required for most MD simulations")
         
-        # Step 7: Write output
+        # Step 7: Record if terminal caps were requested
+        result["cap_termini_required"] = cap_termini
+        
+        # Step 8: Write output file
         logger.info(f"Writing cleaned structure to {output_file}")
         output_file.parent.mkdir(parents=True, exist_ok=True)
         

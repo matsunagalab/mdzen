@@ -27,8 +27,8 @@ WORKING_DIR = Path("output/complex")
 ensure_directory(WORKING_DIR)
 
 # Initialize tool wrappers
-boltz_wrapper = BaseToolWrapper("boltz", conda_env="mcp-md")
-smina_wrapper = BaseToolWrapper("smina", conda_env="mcp-md")
+boltz_wrapper = BaseToolWrapper("boltz")
+smina_wrapper = BaseToolWrapper("smina")
 
 
 @mcp.tool()

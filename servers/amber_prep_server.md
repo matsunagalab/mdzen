@@ -100,7 +100,8 @@ PDBファイルには**結合次数情報が含まれていません**。従来�
 - `output_dir`: 出力ディレクトリ（省略時は自動生成）
 - `select_chains`: 抽出するチェーンIDのリスト（例: `["A"]`）。省略時は全タンパク質チェーン
 - `include_ligands`: 選択チェーンに結合したリガンドを含める（デフォルト: True）
-- `exclude_waters`: 結晶水を除外（デフォルト: True）
+- `include_types`: 含める分子タイプのリスト: "protein", "ligand", "ion", "water"
+                   デフォルト（None）は `["protein", "ligand", "ion"]`（水は除外）
 - `ligand_distance_cutoff`: リガンドがチェーンに「結合している」とみなす距離閾値（デフォルト: 5.0 Å）
 
 **出力:**
@@ -121,11 +122,11 @@ output/amber_prep/{job_id}/
 **使用例:**
 ```python
 # PDBからダウンロードした1AKEのチェーンAとそのリガンドを抽出
+# デフォルトでは水は除外される
 result = parse_structure(
     "1AKE.cif",
     select_chains=["A"],
-    include_ligands=True,
-    exclude_waters=True
+    include_ligands=True
 )
 
 # 全チェーンを抽出（デフォルト）
@@ -136,6 +137,12 @@ result = parse_structure(
     "complex.cif",
     select_chains=["A", "B"],
     include_ligands=False
+)
+
+# 水も含める場合
+result = parse_structure(
+    "structure.pdb",
+    include_types=["protein", "ligand", "ion", "water"]
 )
 ```
 
@@ -376,7 +383,7 @@ result = parse_structure(
     "1AKE.cif",
     select_chains=["A"],        # チェーンAのみ抽出
     include_ligands=True,       # 結合リガンドを含む
-    exclude_waters=True,        # 結晶水を除外
+    # include_types defaults to ["protein", "ligand", "ion"] (no water)
     ligand_distance_cutoff=5.0  # 5Å以内のリガンドを「結合」とみなす
 )
 job_dir = result['output_dir']
@@ -711,7 +718,7 @@ servers/amber_prep_server.py
 from common.base import BaseToolWrapper
 
 # ラッパー初期化（conda環境指定）
-antechamber_wrapper = BaseToolWrapper("antechamber", conda_env="mcp-md")
+antechamber_wrapper = BaseToolWrapper("antechamber")
 
 # コマンド実行
 result = antechamber_wrapper.run(

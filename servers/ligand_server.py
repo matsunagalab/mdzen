@@ -28,9 +28,9 @@ WORKING_DIR = Path("output/ligands")
 ensure_directory(WORKING_DIR)
 
 # Initialize tool wrappers
-antechamber_wrapper = BaseToolWrapper("antechamber", conda_env="mcp-md")
-parmchk2_wrapper = BaseToolWrapper("parmchk2", conda_env="mcp-md")
-tleap_wrapper = BaseToolWrapper("tleap", conda_env="mcp-md")
+antechamber_wrapper = BaseToolWrapper("antechamber")
+parmchk2_wrapper = BaseToolWrapper("parmchk2")
+tleap_wrapper = BaseToolWrapper("tleap")
 
 
 @mcp.tool()

@@ -163,7 +163,7 @@ WORKING_DIR = Path("output").resolve()
 ensure_directory(WORKING_DIR)
 
 # Initialize tool wrappers
-packmol_memgen_wrapper = BaseToolWrapper("packmol-memgen", conda_env="mcp-md")
+packmol_memgen_wrapper = BaseToolWrapper("packmol-memgen")
 
 
 @mcp.tool()

@@ -27,8 +27,7 @@ WORKING_DIR = Path("output/genesis") #作業ディレクトリ
 ensure_directory(WORKING_DIR)
 
 # Initialize Boltz-2 wrapper
-CORRECT_CONDA_ENV = "" #環境名設定
-boltz_wrapper = BaseToolWrapper("boltz", conda_env=CORRECT_CONDA_ENV)
+boltz_wrapper = BaseToolWrapper("boltz")
 
 
 @mcp.tool()

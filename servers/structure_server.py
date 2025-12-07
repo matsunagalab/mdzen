@@ -46,12 +46,12 @@ WORKING_DIR = Path("output")
 ensure_directory(WORKING_DIR)
 
 # Initialize tool wrappers
-pdb2pqr_wrapper = BaseToolWrapper("pdb2pqr", conda_env="mcp-md")
-faspr_wrapper = BaseToolWrapper("FASPR", conda_env="mcp-md")
-pdb4amber_wrapper = BaseToolWrapper("pdb4amber", conda_env="mcp-md")
-antechamber_wrapper = BaseToolWrapper("antechamber", conda_env="mcp-md")
-parmchk2_wrapper = BaseToolWrapper("parmchk2", conda_env="mcp-md")
-obabel_wrapper = BaseToolWrapper("obabel", conda_env="mcp-md")
+pdb2pqr_wrapper = BaseToolWrapper("pdb2pqr")
+faspr_wrapper = BaseToolWrapper("FASPR")
+pdb4amber_wrapper = BaseToolWrapper("pdb4amber")
+antechamber_wrapper = BaseToolWrapper("antechamber")
+parmchk2_wrapper = BaseToolWrapper("parmchk2")
+obabel_wrapper = BaseToolWrapper("obabel")
 
 
 # =============================================================================

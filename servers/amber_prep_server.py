@@ -31,11 +31,11 @@ WORKING_DIR = Path("output/amber_prep")
 ensure_directory(WORKING_DIR)
 
 # Initialize tool wrappers
-antechamber_wrapper = BaseToolWrapper("antechamber", conda_env="mcp-md")
-parmchk2_wrapper = BaseToolWrapper("parmchk2", conda_env="mcp-md")
-pdb4amber_wrapper = BaseToolWrapper("pdb4amber", conda_env="mcp-md")
-tleap_wrapper = BaseToolWrapper("tleap", conda_env="mcp-md")
-obabel_wrapper = BaseToolWrapper("obabel", conda_env="mcp-md")
+antechamber_wrapper = BaseToolWrapper("antechamber")
+parmchk2_wrapper = BaseToolWrapper("parmchk2")
+pdb4amber_wrapper = BaseToolWrapper("pdb4amber")
+tleap_wrapper = BaseToolWrapper("tleap")
+obabel_wrapper = BaseToolWrapper("obabel")
 
 
 # =============================================================================
@@ -647,7 +647,7 @@ def parse_structure(
     output_dir: Optional[str] = None,
     select_chains: Optional[List[str]] = None,
     include_ligands: bool = True,
-    exclude_waters: bool = True,
+    include_types: Optional[List[str]] = None,
     ligand_distance_cutoff: float = 5.0
 ) -> dict:
     """Parse mmCIF or PDB file with chain selection support.
@@ -663,7 +663,8 @@ def parse_structure(
         select_chains: List of chain IDs to extract (e.g., ['A']). 
                       If None, extracts all protein chains.
         include_ligands: Include ligands bound to selected chains
-        exclude_waters: Exclude water molecules
+        include_types: List of molecular types to include: "protein", "ligand", "ion", "water".
+                       Default (None) includes ["protein", "ligand", "ion"] (no water).
         ligand_distance_cutoff: Distance cutoff (Å) to determine if ligand 
                                is bound to selected chain (default: 5.0)
     
@@ -679,6 +680,10 @@ def parse_structure(
         )
     """
     logger.info(f"Parsing structure: {structure_file}")
+    
+    # Set default include_types (exclude water by default)
+    if include_types is None:
+        include_types = ["protein", "ligand", "ion"]
     
     try:
         import gemmi
@@ -806,8 +811,8 @@ def parse_structure(
             for residue in chain:
                 res_name = residue.name.strip()
                 
-                # Skip waters if requested
-                if exclude_waters and res_name in WATER_NAMES:
+                # Skip waters if not in include_types
+                if "water" not in include_types and res_name in WATER_NAMES:
                     continue
                 
                 # Check if this is protein or ligand
@@ -975,7 +980,7 @@ def parse_structure(
         "extracted_ligands": extracted_ligands,
         "num_protein_chains": len([c for c in all_chains if c['is_protein']]),
         "num_ligands": len(ligand_files),
-        "exclude_waters": exclude_waters
+        "include_types": include_types
     }
     
     # Save metadata

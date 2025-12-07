@@ -1589,7 +1589,7 @@ logger = setup_logger(__name__)
 mcp = FastMCP("Server Name")
 
 # 外部ツールラッパー初期化
-tool_wrapper = BaseToolWrapper("tool_name", conda_env="mcp-md")
+tool_wrapper = BaseToolWrapper("tool_name")
 
 @mcp.tool
 def tool_name(param1: str, param2: int = 0) -> dict:

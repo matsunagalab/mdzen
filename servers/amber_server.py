@@ -40,7 +40,7 @@ WORKING_DIR = Path("output").resolve()
 ensure_directory(WORKING_DIR)
 
 # Initialize tool wrappers
-tleap_wrapper = BaseToolWrapper("tleap", conda_env="mcp-md")
+tleap_wrapper = BaseToolWrapper("tleap")
 
 
 # =============================================================================

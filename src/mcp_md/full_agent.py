@@ -5,15 +5,15 @@ This module integrates all three phases of MD setup into a single LangGraph work
 - Phase 2: Setup (MCP tool orchestration)
 - Phase 3: Validation (QC and report generation)
 
-Uses SqliteSaver for checkpoint persistence and human-in-the-loop feedback.
+Uses AsyncSqliteSaver for checkpoint persistence and human-in-the-loop feedback.
 """
 
-import sqlite3
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
 from langchain_core.messages import HumanMessage
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 # Phase 1
@@ -81,22 +81,12 @@ def prepare_validation_input(state: FullAgentState) -> dict:
 # =============================================================================
 
 
-def create_full_agent(
-    checkpoint_path: Optional[Path] = None, interrupt_after_clarification: bool = True
-):
-    """Create the full 3-phase MD setup agent.
-
-    Args:
-        checkpoint_path: Path to SQLite checkpoint file.
-                        Defaults to "checkpoints/full_workflow.db"
-        interrupt_after_clarification: Whether to pause after Phase 1 for
-                                      user review of SimulationBrief.
-                                      Defaults to True.
+def _build_full_agent_graph():
+    """Build the graph structure (without checkpointer).
 
     Returns:
-        Compiled LangGraph with checkpointing enabled
+        StateGraph builder ready for compilation
     """
-    # Build main graph
     builder = StateGraph(
         FullAgentState, input=FullAgentInputState, output=FullAgentOutputState
     )
@@ -121,34 +111,61 @@ def create_full_agent(
     builder.add_edge("prepare_validation_input", "validation_phase")
     builder.add_edge("validation_phase", END)
 
-    # Setup checkpointing
+    return builder
+
+
+@asynccontextmanager
+async def create_full_agent(
+    checkpoint_path: Optional[Path] = None, interrupt_after_clarification: bool = True
+):
+    """Create the full 3-phase MD setup agent as an async context manager.
+
+    Usage:
+        async with create_full_agent(checkpoint_path) as agent:
+            result = await agent.ainvoke(...)
+
+    Args:
+        checkpoint_path: Path to SQLite checkpoint file.
+                        Defaults to "checkpoints/full_workflow.db"
+        interrupt_after_clarification: Whether to pause after Phase 1 for
+                                      user review of SimulationBrief.
+                                      Defaults to True.
+
+    Yields:
+        Compiled LangGraph with async checkpointing enabled
+    """
+    # Build graph structure
+    builder = _build_full_agent_graph()
+
+    # Setup async checkpointing
     if checkpoint_path is None:
         checkpoint_path = Path("checkpoints/full_workflow.db")
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = sqlite3.connect(str(checkpoint_path), check_same_thread=False)
-    memory = SqliteSaver(conn)
+    # Use AsyncSqliteSaver as async context manager
+    async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as memory:
+        # Compile with optional interrupt for human-in-the-loop
+        interrupt_nodes = ["clarification_phase"] if interrupt_after_clarification else []
+        agent = builder.compile(checkpointer=memory, interrupt_after=interrupt_nodes)
+        yield agent
 
-    # Compile with optional interrupt for human-in-the-loop
-    interrupt_nodes = ["clarification_phase"] if interrupt_after_clarification else []
 
-    return builder.compile(checkpointer=memory, interrupt_after=interrupt_nodes)
-
-
-def create_full_agent_no_interrupt(checkpoint_path: Optional[Path] = None):
+@asynccontextmanager
+async def create_full_agent_no_interrupt(checkpoint_path: Optional[Path] = None):
     """Create full agent without interrupts (for automated testing).
 
     This is a convenience function that creates the full agent
     without pausing after the clarification phase.
 
+    Usage:
+        async with create_full_agent_no_interrupt(checkpoint_path) as agent:
+            result = await agent.ainvoke(...)
+
     Args:
         checkpoint_path: Path to SQLite checkpoint file
 
-    Returns:
+    Yields:
         Compiled LangGraph without interrupts
     """
-    return create_full_agent(checkpoint_path, interrupt_after_clarification=False)
-
-
-# Pre-compiled agent for import convenience (with default settings)
-full_agent = create_full_agent()
+    async with create_full_agent(checkpoint_path, interrupt_after_clarification=False) as agent:
+        yield agent

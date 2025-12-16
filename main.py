@@ -4,12 +4,13 @@ MCP-MD - Molecular Dynamics Input File Generation Agent
 Main entry point for the MCP-MD workflow system.
 """
 
+import asyncio
 import uuid
 from pathlib import Path
 
 import typer
 from langchain_core.messages import HumanMessage
-from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit import PromptSession
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -17,10 +18,131 @@ from rich.table import Table
 app = typer.Typer(help="MD Input File Generation Agent with Boltz-2, AmberTools, and OpenMM")
 console = Console()
 
+# Async prompt session for use in async context
+_prompt_session = None
+
+
+def get_prompt_session() -> PromptSession:
+    """Get or create prompt session."""
+    global _prompt_session
+    if _prompt_session is None:
+        _prompt_session = PromptSession()
+    return _prompt_session
+
+
+async def async_prompt(message: str) -> str:
+    """Async prompt for user input."""
+    session = get_prompt_session()
+    return await session.prompt_async(message)
+
+
+def sync_prompt(message: str) -> str:
+    """Synchronous prompt for user input (use before async context)."""
+    session = get_prompt_session()
+    return session.prompt(message)
+
 
 # =============================================================================
 # INTERACTIVE MODE
 # =============================================================================
+
+
+async def _interactive_async(
+    initial_request: str,
+    thread_id: str,
+    checkpoint_path: Path,
+):
+    """Async implementation of interactive mode."""
+    from mcp_md.full_agent import create_full_agent
+
+    async with create_full_agent(checkpoint_path, interrupt_after_clarification=True) as agent:
+        config = {"configurable": {"thread_id": thread_id}}
+
+        # Phase 1: Clarification (interactive loop)
+        console.print("\n[bold]Phase 1: Clarification[/bold]")
+        console.print("-" * 40)
+
+        result = await agent.ainvoke(
+            {"messages": [HumanMessage(content=initial_request)]},
+            config=config
+        )
+
+        # Interactive loop for clarification
+        while True:
+            # Check if we have a simulation brief
+            if "simulation_brief" in result and result["simulation_brief"]:
+                brief = result["simulation_brief"]
+                if hasattr(brief, "model_dump"):
+                    brief = brief.model_dump()
+
+                console.print("\n[bold green]SimulationBrief generated:[/bold green]")
+                _print_brief(brief)
+
+                console.print("\n[yellow]Options:[/yellow]")
+                console.print("  - Type 'continue' or 'yes' to proceed to Setup phase")
+                console.print("  - Type 'quit' to exit")
+                console.print("  - Or provide feedback to modify the brief\n")
+
+                user_input = (await async_prompt(">> ")).strip()
+
+                if user_input.lower() in ["quit", "exit", "q"]:
+                    console.print("[yellow]Session ended.[/yellow]")
+                    return
+                elif user_input.lower() in ["continue", "yes", "y", "ok", "proceed"]:
+                    break
+                else:
+                    # User wants to modify - send feedback
+                    result = await agent.ainvoke(
+                        {"messages": [HumanMessage(content=user_input)]},
+                        config=config
+                    )
+            else:
+                # Agent is asking clarification questions
+                messages = result.get("messages", [])
+                if messages:
+                    last_msg = messages[-1]
+                    if hasattr(last_msg, "content"):
+                        console.print(f"\n[bold blue]Agent:[/bold blue] {last_msg.content}\n")
+
+                user_input = (await async_prompt(">> ")).strip()
+
+                if user_input.lower() in ["quit", "exit", "q"]:
+                    console.print("[yellow]Session ended.[/yellow]")
+                    return
+
+                result = await agent.ainvoke(
+                    {"messages": [HumanMessage(content=user_input)]},
+                    config=config
+                )
+
+        # Phase 2: Setup
+        console.print("\n[bold]Phase 2: Setup (MCP Tool Execution)[/bold]")
+        console.print("-" * 40)
+        console.print("[dim]Executing MCP tools... This may take a few minutes.[/dim]\n")
+
+        result = await agent.ainvoke(None, config=config)
+
+        if "compressed_setup" in result and result.get("compressed_setup"):
+            console.print("\n[bold green]Setup Complete![/bold green]")
+            console.print("\nSetup Summary:")
+            console.print(result.get("compressed_setup", ""))
+
+            if "outputs" in result:
+                console.print("\n[bold]Generated Files:[/bold]")
+                for key, value in result.get("outputs", {}).items():
+                    console.print(f"  {key}: {value}")
+
+        # Phase 3: Validation
+        console.print("\n[bold]Phase 3: Validation[/bold]")
+        console.print("-" * 40)
+
+        result = await agent.ainvoke(None, config=config)
+
+        if "final_report" in result and result.get("final_report"):
+            console.print("\n[bold green]Validation Complete![/bold green]")
+            console.print(result.get("final_report", ""))
+
+        console.print(f"\n[green]Session complete! Thread ID: {thread_id}[/green]")
 
 
 @app.command()
@@ -33,7 +155,7 @@ def interactive(
 ):
     """Interactive mode: Chat with the agent to setup MD simulation"""
     try:
-        from mcp_md.full_agent import create_full_agent
+        from mcp_md.full_agent import create_full_agent  # noqa: F401
     except ImportError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         console.print("\nMake sure mcp_md package is installed:")
@@ -54,109 +176,81 @@ def interactive(
         title="MD Setup Agent"
     ))
 
-    agent = create_full_agent(checkpoint_path, interrupt_after_clarification=True)
-    config = {"configurable": {"thread_id": thread_id}}
-
     # Get initial request if not provided
     if initial_request is None:
         console.print("\n[bold]What MD simulation would you like to set up?[/bold]")
         console.print("[dim]Example: Setup MD for PDB 1AKE in explicit water, 1 ns at 300K[/dim]\n")
-        initial_request = pt_prompt("> ").strip()
+        initial_request = sync_prompt("> ").strip()
 
         if initial_request.lower() in ["quit", "exit", "q"]:
             console.print("[yellow]Session ended.[/yellow]")
             return
 
-    # Phase 1: Clarification (interactive loop)
-    console.print("\n[bold]Phase 1: Clarification[/bold]")
-    console.print("-" * 40)
+    # Run the async workflow in a single event loop
+    asyncio.run(_interactive_async(initial_request, thread_id, checkpoint_path))
 
-    result = agent.invoke(
-        {"messages": [HumanMessage(content=initial_request)]},
-        config=config
-    )
 
-    # Interactive loop for clarification
-    while True:
-        # Check if we have a simulation brief
-        if "simulation_brief" in result and result["simulation_brief"]:
+# =============================================================================
+# BATCH MODE
+# =============================================================================
+
+
+async def _batch_async(
+    request: str,
+    thread_id: str,
+    checkpoint_path: Path,
+    output_json: str | None,
+):
+    """Async implementation of batch mode."""
+    import json
+    from mcp_md.full_agent import create_full_agent_no_interrupt
+
+    async with create_full_agent_no_interrupt(checkpoint_path) as agent:
+        config = {"configurable": {"thread_id": thread_id}}
+
+        console.print("[dim]Running full workflow (Phase 1 → 2 → 3)...[/dim]\n")
+
+        result = await agent.ainvoke(
+            {"messages": [HumanMessage(content=request)]},
+            config=config
+        )
+
+        # Display results
+        if "simulation_brief" in result:
             brief = result["simulation_brief"]
             if hasattr(brief, "model_dump"):
                 brief = brief.model_dump()
-
-            console.print("\n[bold green]SimulationBrief generated:[/bold green]")
+            console.print("[bold]SimulationBrief:[/bold]")
             _print_brief(brief)
-
-            console.print("\n[yellow]Options:[/yellow]")
-            console.print("  - Type 'continue' or 'yes' to proceed to Setup phase")
-            console.print("  - Type 'quit' to exit")
-            console.print("  - Or provide feedback to modify the brief\n")
-
-            user_input = pt_prompt(">> ").strip()
-
-            if user_input.lower() in ["quit", "exit", "q"]:
-                console.print("[yellow]Session ended.[/yellow]")
-                return
-            elif user_input.lower() in ["continue", "yes", "y", "ok", "proceed"]:
-                break
-            else:
-                # User wants to modify - send feedback
-                result = agent.invoke(
-                    {"messages": [HumanMessage(content=user_input)]},
-                    config=config
-                )
-        else:
-            # Agent is asking clarification questions
-            messages = result.get("messages", [])
-            if messages:
-                last_msg = messages[-1]
-                if hasattr(last_msg, "content"):
-                    console.print(f"\n[bold blue]Agent:[/bold blue] {last_msg.content}\n")
-
-            user_input = pt_prompt(">> ").strip()
-
-            if user_input.lower() in ["quit", "exit", "q"]:
-                console.print("[yellow]Session ended.[/yellow]")
-                return
-
-            result = agent.invoke(
-                {"messages": [HumanMessage(content=user_input)]},
-                config=config
-            )
-
-    # Phase 2: Setup
-    console.print("\n[bold]Phase 2: Setup (MCP Tool Execution)[/bold]")
-    console.print("-" * 40)
-    console.print("[dim]Executing MCP tools... This may take a few minutes.[/dim]\n")
-
-    result = agent.invoke(None, config=config)
-
-    if "compressed_setup" in result and result.get("compressed_setup"):
-        console.print("\n[bold green]Setup Complete![/bold green]")
-        console.print("\nSetup Summary:")
-        console.print(result.get("compressed_setup", ""))
 
         if "outputs" in result:
             console.print("\n[bold]Generated Files:[/bold]")
             for key, value in result.get("outputs", {}).items():
                 console.print(f"  {key}: {value}")
 
-    # Phase 3: Validation
-    console.print("\n[bold]Phase 3: Validation[/bold]")
-    console.print("-" * 40)
+        if "final_report" in result:
+            console.print("\n[bold]Final Report:[/bold]")
+            console.print(result.get("final_report", ""))
 
-    result = agent.invoke(None, config=config)
+        # Save to JSON if requested
+        if output_json:
+            output_data = {
+                "thread_id": thread_id,
+                "request": request,
+                "simulation_brief": result.get("simulation_brief", {}),
+                "outputs": result.get("outputs", {}),
+                "decision_log": result.get("decision_log", []),
+                "final_report": result.get("final_report", ""),
+            }
+            # Handle Pydantic models
+            if hasattr(output_data["simulation_brief"], "model_dump"):
+                output_data["simulation_brief"] = output_data["simulation_brief"].model_dump()
 
-    if "final_report" in result and result.get("final_report"):
-        console.print("\n[bold green]Validation Complete![/bold green]")
-        console.print(result.get("final_report", ""))
+            with open(output_json, "w") as f:
+                json.dump(output_data, f, indent=2, default=str)
+            console.print(f"\n[green]Results saved to: {output_json}[/green]")
 
-    console.print(f"\n[green]Session complete! Thread ID: {thread_id}[/green]")
-
-
-# =============================================================================
-# BATCH MODE
-# =============================================================================
+        console.print(f"\n[green]Batch complete! Thread ID: {thread_id}[/green]")
 
 
 @app.command()
@@ -167,10 +261,8 @@ def batch(
     output_json: str = typer.Option(None, help="Output results to JSON file"),
 ):
     """Batch mode: Run full workflow without interaction"""
-    import json
-
     try:
-        from mcp_md.full_agent import create_full_agent_no_interrupt
+        from mcp_md.full_agent import create_full_agent_no_interrupt  # noqa: F401
     except ImportError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(1)
@@ -188,57 +280,38 @@ def batch(
         title="Automated MD Setup"
     ))
 
-    agent = create_full_agent_no_interrupt(checkpoint_path)
-    config = {"configurable": {"thread_id": thread_id}}
-
-    console.print("[dim]Running full workflow (Phase 1 → 2 → 3)...[/dim]\n")
-
-    result = agent.invoke(
-        {"messages": [HumanMessage(content=request)]},
-        config=config
-    )
-
-    # Display results
-    if "simulation_brief" in result:
-        brief = result["simulation_brief"]
-        if hasattr(brief, "model_dump"):
-            brief = brief.model_dump()
-        console.print("[bold]SimulationBrief:[/bold]")
-        _print_brief(brief)
-
-    if "outputs" in result:
-        console.print("\n[bold]Generated Files:[/bold]")
-        for key, value in result.get("outputs", {}).items():
-            console.print(f"  {key}: {value}")
-
-    if "final_report" in result:
-        console.print("\n[bold]Final Report:[/bold]")
-        console.print(result.get("final_report", ""))
-
-    # Save to JSON if requested
-    if output_json:
-        output_data = {
-            "thread_id": thread_id,
-            "request": request,
-            "simulation_brief": result.get("simulation_brief", {}),
-            "outputs": result.get("outputs", {}),
-            "decision_log": result.get("decision_log", []),
-            "final_report": result.get("final_report", ""),
-        }
-        # Handle Pydantic models
-        if hasattr(output_data["simulation_brief"], "model_dump"):
-            output_data["simulation_brief"] = output_data["simulation_brief"].model_dump()
-
-        with open(output_json, "w") as f:
-            json.dump(output_data, f, indent=2, default=str)
-        console.print(f"\n[green]Results saved to: {output_json}[/green]")
-
-    console.print(f"\n[green]Batch complete! Thread ID: {thread_id}[/green]")
+    asyncio.run(_batch_async(request, thread_id, checkpoint_path, output_json))
 
 
 # =============================================================================
 # UTILITY COMMANDS
 # =============================================================================
+
+
+async def _resume_async(
+    thread_id: str,
+    checkpoint_path: Path,
+):
+    """Async implementation of resume mode."""
+    from mcp_md.full_agent import create_full_agent
+
+    async with create_full_agent(checkpoint_path, interrupt_after_clarification=True) as agent:
+        config = {"configurable": {"thread_id": thread_id}}
+
+        console.print("[bold]Continuing from checkpoint...[/bold]")
+        console.print("-" * 40)
+
+        result = await agent.ainvoke(None, config=config)
+
+        if "compressed_setup" in result and result.get("compressed_setup"):
+            console.print("\n[bold green]Phase 2: Setup Complete[/bold green]")
+            console.print(result.get("compressed_setup", ""))
+
+        if "final_report" in result and result.get("final_report"):
+            console.print("\n[bold green]Phase 3: Validation Complete[/bold green]")
+            console.print(result.get("final_report", ""))
+
+        console.print(f"\n[green]Done! Thread ID: {thread_id}[/green]")
 
 
 @app.command()
@@ -248,7 +321,7 @@ def resume(
 ):
     """Resume a paused workflow from checkpoint"""
     try:
-        from mcp_md.full_agent import create_full_agent
+        from mcp_md.full_agent import create_full_agent  # noqa: F401
     except ImportError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(1)
@@ -265,23 +338,7 @@ def resume(
         title="Resume MD Setup"
     ))
 
-    agent = create_full_agent(checkpoint_path, interrupt_after_clarification=True)
-    config = {"configurable": {"thread_id": thread_id}}
-
-    console.print("[bold]Continuing from checkpoint...[/bold]")
-    console.print("-" * 40)
-
-    result = agent.invoke(None, config=config)
-
-    if "compressed_setup" in result and result.get("compressed_setup"):
-        console.print("\n[bold green]Phase 2: Setup Complete[/bold green]")
-        console.print(result.get("compressed_setup", ""))
-
-    if "final_report" in result and result.get("final_report"):
-        console.print("\n[bold green]Phase 3: Validation Complete[/bold green]")
-        console.print(result.get("final_report", ""))
-
-    console.print(f"\n[green]Done! Thread ID: {thread_id}[/green]")
+    asyncio.run(_resume_async(thread_id, checkpoint_path))
 
 
 @app.command()

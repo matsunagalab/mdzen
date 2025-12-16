@@ -19,27 +19,14 @@ from prompt_toolkit import PromptSession
 app = typer.Typer(help="MD Input File Generation Agent with Boltz-2, AmberTools, and OpenMM")
 console = Console()
 
-# Shared prompt session for async/sync compatibility
-_prompt_session = None
-
-
-def get_prompt_session() -> PromptSession:
-    """Get or create shared prompt session."""
-    global _prompt_session
-    if _prompt_session is None:
-        _prompt_session = PromptSession()
-    return _prompt_session
-
-
-async def async_prompt(message: str) -> str:
-    """Async prompt for user input."""
-    session = get_prompt_session()
-    return await session.prompt_async(message)
-
 
 def sync_prompt(message: str) -> str:
-    """Synchronous prompt for user input (use before async context)."""
-    session = get_prompt_session()
+    """Synchronous prompt for user input (use before async context).
+    
+    Creates a new PromptSession each time to avoid sharing state
+    between sync and async contexts.
+    """
+    session = PromptSession()
     return session.prompt(message)
 
 
@@ -175,8 +162,17 @@ def interactive(
 
 async def _interactive_async(request: str, thread_id: str, checkpoint_dir: str):
     """Async implementation of interactive mode."""
+    import json as json_module
     from langchain_core.messages import HumanMessage
     from mcp_md.full_agent import create_full_agent
+
+    # Create PromptSession within the async context to ensure
+    # prompt_async() works correctly with the current event loop
+    async_session = PromptSession()
+
+    async def async_prompt(message: str) -> str:
+        """Async prompt for user input using session created in async context."""
+        return await async_session.prompt_async(message)
 
     # Generate thread ID if not provided
     if thread_id is None:
@@ -188,6 +184,7 @@ async def _interactive_async(request: str, thread_id: str, checkpoint_dir: str):
     console.print("[bold cyan]MCP-MD Interactive Mode[/bold cyan]")
     console.print(f"Thread ID: {thread_id}")
     console.print(f"Checkpoint: {checkpoint_path}")
+    console.print("Type 'quit' or 'exit' to end session")
     console.print("=" * 60)
 
     # Get initial request if not provided
@@ -196,10 +193,14 @@ async def _interactive_async(request: str, thread_id: str, checkpoint_dir: str):
         console.print("(e.g., 'Setup MD for PDB 1AKE in water, 1 ns at 300K')")
         request = sync_prompt("\n> ")
 
+        if request.lower() in ["quit", "exit", "q"]:
+            console.print("[yellow]Session ended.[/yellow]")
+            return
+
     async with create_full_agent(checkpoint_path, interrupt_after_clarification=True) as agent:
         config = {"configurable": {"thread_id": thread_id}}
 
-        # Phase 1: Clarification
+        # Phase 1: Clarification (interactive loop)
         console.print("\n[bold]Phase 1: Clarification[/bold]")
         console.print("[dim]Analyzing your request...[/dim]\n")
 
@@ -208,42 +209,79 @@ async def _interactive_async(request: str, thread_id: str, checkpoint_dir: str):
             config=config
         )
 
-        # Show SimulationBrief
-        simulation_brief = result.get("simulation_brief")
-        if simulation_brief:
-            console.print("\n[bold green]SimulationBrief Generated:[/bold green]")
-            if hasattr(simulation_brief, "model_dump"):
-                import json
-                console.print(json.dumps(simulation_brief.model_dump(), indent=2))
+        # Interactive clarification loop
+        while True:
+            # Check if we have a simulation brief
+            simulation_brief = result.get("simulation_brief")
+            if simulation_brief:
+                console.print("\n[bold green]SimulationBrief Generated:[/bold green]")
+                if hasattr(simulation_brief, "model_dump"):
+                    console.print(json_module.dumps(simulation_brief.model_dump(), indent=2))
+                else:
+                    console.print(str(simulation_brief))
+
+                console.print("\n[yellow]Options:[/yellow]")
+                console.print("  - Type 'continue' or 'yes' to proceed to Setup phase")
+                console.print("  - Type 'quit' to exit")
+                console.print("  - Or provide feedback to modify the brief\n")
+
+                user_input = (await async_prompt(">> ")).strip()
+
+                if user_input.lower() in ["quit", "exit", "q"]:
+                    console.print("[yellow]Session ended.[/yellow]")
+                    return
+                elif user_input.lower() in ["continue", "yes", "y", "ok", "proceed"]:
+                    break
+                else:
+                    # User wants to modify - send feedback
+                    result = await agent.ainvoke(
+                        {"messages": [HumanMessage(content=user_input)]},
+                        config=config
+                    )
             else:
-                console.print(str(simulation_brief))
+                # Agent is asking clarification questions (no brief yet)
+                messages = result.get("messages", [])
+                if messages:
+                    last_msg = messages[-1]
+                    if hasattr(last_msg, "content"):
+                        console.print(f"\n[bold blue]Agent:[/bold blue] {last_msg.content}\n")
 
-            # Ask for confirmation
-            console.print("\n[yellow]Review the SimulationBrief above.[/yellow]")
-            confirm = await async_prompt("Proceed to setup? [y/N]: ")
+                user_input = (await async_prompt(">> ")).strip()
 
-            if confirm.lower() not in ["y", "yes"]:
-                console.print("[yellow]Setup cancelled.[/yellow]")
-                return
+                if user_input.lower() in ["quit", "exit", "q"]:
+                    console.print("[yellow]Session ended.[/yellow]")
+                    return
 
-        # Phase 2 & 3: Setup and Validation
-        console.print("\n[bold]Phase 2: Setup (MCP Tool Execution)[/bold]")
-        console.print("[dim]Executing MD setup workflow...[/dim]\n")
+                result = await agent.ainvoke(
+                    {"messages": [HumanMessage(content=user_input)]},
+                    config=config
+                )
+
+        # Phase 2 & 3: Setup and Validation (runs in one ainvoke after interrupt)
+        console.print("\n[bold]Phase 2-3: Setup & Validation[/bold]")
+        console.print("[dim]Executing MD setup workflow... This may take a few minutes.[/dim]\n")
 
         result = await agent.ainvoke(None, config=config)
 
-        # Show final report
-        if "final_report" in result:
+        # Show setup summary
+        if result.get("compressed_setup"):
             console.print("\n[bold green]Setup Complete![/bold green]")
-            console.print(result["final_report"])
-        else:
-            console.print("\n[bold green]Setup Complete![/bold green]")
-            if "outputs" in result:
-                console.print("\nGenerated files:")
-                for key, value in result.get("outputs", {}).items():
-                    console.print(f"  {key}: {value}")
+            console.print("\nSetup Summary:")
+            console.print(result.get("compressed_setup", ""))
 
-        console.print(f"\n[dim]Session saved to: {checkpoint_path}[/dim]")
+        # Show generated files
+        if result.get("outputs"):
+            console.print("\n[bold]Generated Files:[/bold]")
+            for key, value in result.get("outputs", {}).items():
+                console.print(f"  {key}: {value}")
+
+        # Show validation report
+        if result.get("final_report"):
+            console.print("\n[bold]Validation Report:[/bold]")
+            console.print(result.get("final_report", ""))
+
+        console.print(f"\n[green]Session complete! Thread ID: {thread_id}[/green]")
+        console.print(f"[dim]Checkpoint saved to: {checkpoint_path}[/dim]")
 
 
 @app.command()

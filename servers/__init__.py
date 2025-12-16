@@ -7,7 +7,6 @@ Available servers:
 - complex_server: Protein-ligand complex prediction with Boltz-2
 - ligand_server: RDKit 3D generation and AmberTools parameterization
 - qc_min_server: Quality checks and energy minimization
-- amber_prep_server: Boltz-2 complex to MD input files with robust parameterization
 """
 
 __all__ = [
@@ -16,5 +15,4 @@ __all__ = [
     "complex_server",
     "ligand_server",
     "qc_min_server",
-    "amber_prep_server",
 ]

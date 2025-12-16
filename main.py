@@ -4,6 +4,10 @@ MCP-MD - Molecular Dynamics Input File Generation Agent
 Main entry point for the MCP-MD workflow system.
 """
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 import typer
 import asyncio
 from datetime import datetime

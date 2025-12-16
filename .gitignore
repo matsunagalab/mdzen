@@ -28,6 +28,9 @@ wheels/
 .conda/
 *.venv
 
+# Package manager lock files (using conda)
+uv.lock
+
 # IDE
 .vscode/
 .idea/

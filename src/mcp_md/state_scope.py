@@ -96,6 +96,19 @@ class SimulationBrief(BaseModel):
         default="gaff2", description="Ligand atom type: 'gaff' or 'gaff2'"
     )
 
+    # ===== SYSTEM COMPONENTS =====
+    include_types: List[str] = Field(
+        default=["protein", "ligand", "ion"],
+        description=(
+            "Components to include from input structure. Valid options: "
+            "'protein' (amino acid chains), "
+            "'ligand' (small molecules/drugs), "
+            "'ion' (crystallographic ions like Na, Mg, Zn, Ca), "
+            "'water' (crystallographic waters). "
+            "Default: ['protein', 'ligand', 'ion']"
+        )
+    )
+
     # ===== STRUCTURE PREPARATION =====
     ph: float = Field(default=7.0, description="pH value for protonation")
     cap_termini: bool = Field(

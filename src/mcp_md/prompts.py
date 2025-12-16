@@ -43,6 +43,7 @@ Assess whether you need to ask clarifying questions, or if the user has provided
 
 **COMMONLY NEEDED Information (ask if ambiguous):**
 - Specific chains to process (for multi-chain structures)
+- Components to include: protein, ligand, ion, water (default: protein+ligand+ion)
 - Simulation duration (default: 1 ns)
 - Temperature (default: 300 K)
 - Ensemble type: NPT (with pressure) or NVT
@@ -82,6 +83,7 @@ Return a structured JSON with all available parameters.
 **Structure Input:**
 - pdb_id, fasta_sequence, select_chains
 - ligand_smiles (as dict: {{"LIG1": "SMILES_string"}})
+- include_types (list of: "protein", "ligand", "ion", "water"; default: ["protein", "ligand", "ion"])
 
 **Ligand Parameters:**
 - charge_method (bcc or gas), atom_type (gaff or gaff2)
@@ -192,6 +194,7 @@ Turn 1: No outputs yet
 -> Call prepare_complex(
     structure_file="1AKE.pdb",
     select_chains=["A", "B"],         # From SimulationBrief.select_chains (if specified)
+    include_types=["protein", "ligand", "ion"],  # From SimulationBrief.include_types
     ph=7.4,                           # From SimulationBrief.ph
     cap_termini=False,                # From SimulationBrief.cap_termini
     ligand_smiles={{"LIG": "..."}},   # From SimulationBrief.ligand_smiles (if ligands present)

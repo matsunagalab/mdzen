@@ -38,6 +38,7 @@ class AgentState(MessagesState):
     # Phase 1: Clarification
     research_brief: Optional[str] = None  # Compatibility with deep_research pattern
     simulation_brief: Optional["SimulationBrief"] = None
+    structure_info: Optional[Dict] = None  # Inspection results from fetch/inspect tools
 
     # Phase 2: Setup (will be added in Notebook 2)
     setup_messages: Annotated[Sequence[BaseMessage], add_messages] = []

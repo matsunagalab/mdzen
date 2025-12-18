@@ -14,6 +14,7 @@ class ValidationState(TypedDict):
 
     Input from Setup phase (Phase 2):
     - simulation_brief: Original configuration
+    - session_dir: Root directory for all outputs
     - setup_outputs: File paths from setup
     - decision_log: Execution history
     - compressed_setup: Summary of setup execution
@@ -21,6 +22,7 @@ class ValidationState(TypedDict):
 
     # Input from Setup phase
     simulation_brief: dict
+    session_dir: str  # Root directory containing all workflow outputs
     setup_outputs: dict  # File paths (prmtop, rst7, etc.)
     decision_log: list[dict]
     compressed_setup: str  # Summary from setup agent

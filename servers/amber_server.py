@@ -21,7 +21,7 @@ from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from common.utils import setup_logger, ensure_directory, create_unique_subdir
-from common.base import BaseToolWrapper
+from common.base import BaseToolWrapper, get_default_timeout
 from common.errors import (
     create_file_not_found_error,
     create_tool_not_available_error,
@@ -489,10 +489,11 @@ def build_amber_system(
         
         # Run tleap
         logger.info("Running tleap...")
+        tleap_timeout = get_default_timeout()
         proc_result = tleap_wrapper.run(
             ['-f', str(leap_script_file)],
             cwd=out_dir,
-            timeout=300
+            timeout=tleap_timeout
         )
         
         # Save log

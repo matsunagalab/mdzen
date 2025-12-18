@@ -22,7 +22,7 @@ from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb, create_unique_subdir
-from common.base import BaseToolWrapper
+from common.base import BaseToolWrapper, get_solvation_timeout, get_membrane_timeout
 
 
 def generate_job_id() -> str:
@@ -335,7 +335,8 @@ def solvate_structure(
         logger.info(f"Running packmol-memgen with args: {' '.join(args)}")
 
         # Run packmol-memgen (no need for env_vars since we pass --packmol)
-        proc_result = packmol_memgen_wrapper.run(args, cwd=out_dir, timeout=600)
+        solvation_timeout = get_solvation_timeout()
+        proc_result = packmol_memgen_wrapper.run(args, cwd=out_dir, timeout=solvation_timeout)
 
         # If output file wasn't created, try running packmol manually
         packmol_inp_file = out_dir / f"{output_name}_packmol.inp"
@@ -350,7 +351,7 @@ def solvate_structure(
                         stderr=subprocess.PIPE,
                         text=True,
                         cwd=out_dir,
-                        timeout=600,
+                        timeout=solvation_timeout,
                         check=True
                     )
                 # Save packmol output
@@ -361,7 +362,7 @@ def solvate_structure(
                 result["errors"].append(f"Packmol failed: {e.stderr[:500]}")
                 logger.error(f"Packmol failed: {e.stderr}")
             except subprocess.TimeoutExpired:
-                result["errors"].append("Packmol timed out after 600s")
+                result["errors"].append(f"Packmol timed out after {solvation_timeout}s")
                 logger.error("Packmol timed out")
 
         # Check if output was created
@@ -618,7 +619,8 @@ def embed_in_membrane(
         logger.info(f"Running packmol-memgen with args: {' '.join(args)}")
 
         # Run packmol-memgen (membrane building can take longer)
-        proc_result = packmol_memgen_wrapper.run(args, cwd=out_dir, timeout=1800)
+        membrane_timeout = get_membrane_timeout()
+        proc_result = packmol_memgen_wrapper.run(args, cwd=out_dir, timeout=membrane_timeout)
 
         # If output file wasn't created, try running packmol manually
         packmol_inp_file = out_dir / f"{output_name}_packmol.inp"
@@ -633,7 +635,7 @@ def embed_in_membrane(
                         stderr=subprocess.PIPE,
                         text=True,
                         cwd=out_dir,
-                        timeout=1800,  # Membrane building can take longer
+                        timeout=membrane_timeout,
                         check=True
                     )
                 # Save packmol output
@@ -644,7 +646,7 @@ def embed_in_membrane(
                 result["errors"].append(f"Packmol failed: {e.stderr[:500]}")
                 logger.error(f"Packmol failed: {e.stderr}")
             except subprocess.TimeoutExpired:
-                result["errors"].append("Packmol timed out after 1800s")
+                result["errors"].append(f"Packmol timed out after {membrane_timeout}s")
                 logger.error("Packmol timed out")
 
         # Check if output was created

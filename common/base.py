@@ -3,11 +3,61 @@ Base wrapper class for external tools.
 """
 
 import logging
+import os
 import subprocess
 from pathlib import Path
 from typing import Optional, Union, List
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Timeout Configuration (from environment variables)
+# =============================================================================
+
+
+def get_default_timeout() -> int:
+    """Get default timeout from environment or use fallback.
+
+    Environment variable: MCPMD_DEFAULT_TIMEOUT (default: 300 seconds)
+
+    Returns:
+        Timeout in seconds
+    """
+    return int(os.getenv("MCPMD_DEFAULT_TIMEOUT", "300"))
+
+
+def get_solvation_timeout() -> int:
+    """Get solvation timeout (longer for complex systems).
+
+    Environment variable: MCPMD_SOLVATION_TIMEOUT (default: 600 seconds)
+
+    Returns:
+        Timeout in seconds
+    """
+    return int(os.getenv("MCPMD_SOLVATION_TIMEOUT", "600"))
+
+
+def get_membrane_timeout() -> int:
+    """Get membrane building timeout (longest operation).
+
+    Environment variable: MCPMD_MEMBRANE_TIMEOUT (default: 1800 seconds)
+
+    Returns:
+        Timeout in seconds
+    """
+    return int(os.getenv("MCPMD_MEMBRANE_TIMEOUT", "1800"))
+
+
+def get_md_simulation_timeout() -> int:
+    """Get MD simulation timeout (can be very long).
+
+    Environment variable: MCPMD_MD_SIMULATION_TIMEOUT (default: 3600 seconds)
+
+    Returns:
+        Timeout in seconds
+    """
+    return int(os.getenv("MCPMD_MD_SIMULATION_TIMEOUT", "3600"))
 
 
 def run_command(

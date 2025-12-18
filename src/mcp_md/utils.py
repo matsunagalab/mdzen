@@ -124,6 +124,12 @@ def compress_tool_result(tool_name: str, result: dict) -> dict:
         ]
         compressed.update({k: v for k, v in result.items() if k not in verbose_keys})
 
+    # Always preserve error recovery suggestions (added by tool_node)
+    if "suggested_action" in result:
+        compressed["suggested_action"] = result["suggested_action"]
+    if "action_message" in result:
+        compressed["action_message"] = result["action_message"]
+
     return compressed
 
 

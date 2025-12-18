@@ -209,6 +209,32 @@ async def tool_node(state: SetupAgentState) -> dict:
 
         # Parse result safely (handles str, dict, or other types)
         result = parse_tool_result(raw_result)
+
+        # Add error recovery suggestions for failed tools
+        if isinstance(result, dict) and not result.get("success", True):
+            errors = result.get("errors", [])
+            error_text = " ".join(str(e).lower() for e in errors)
+
+            # can_continue flag means partial success is acceptable
+            if result.get("can_continue"):
+                result["suggested_action"] = "continue_with_partial"
+                result["action_message"] = "Partial success. Continue to next step."
+            # File not found - likely previous step issue
+            elif "not found" in error_text or "does not exist" in error_text:
+                result["suggested_action"] = "check_previous_step"
+                result["action_message"] = "Required file missing. Check if previous step completed."
+            # Parameter validation errors
+            elif "invalid" in error_text or "parameter" in error_text:
+                result["suggested_action"] = "fix_parameters"
+                result["action_message"] = "Invalid parameters. Review SimulationBrief settings."
+            # Timeout errors
+            elif "timeout" in error_text:
+                result["suggested_action"] = "retry_with_longer_timeout"
+                result["action_message"] = "Operation timed out. May need longer timeout."
+            else:
+                result["suggested_action"] = "report_and_stop"
+                result["action_message"] = "Unrecoverable error. Stopping workflow."
+
         raw_results.append(result)
 
         # Create tool message for conversation

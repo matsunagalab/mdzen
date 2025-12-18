@@ -10,6 +10,27 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 
+def merge_outputs(left: dict, right: dict) -> dict:
+    """Merge outputs dictionaries, preserving all keys.
+
+    This reducer ensures outputs from multiple tool calls accumulate
+    rather than overwrite each other. Right side takes precedence
+    for duplicate keys (newer values win).
+
+    Args:
+        left: Existing outputs dictionary
+        right: New outputs to merge
+
+    Returns:
+        Merged dictionary with all keys from both inputs
+    """
+    if left is None:
+        return right or {}
+    if right is None:
+        return left or {}
+    return {**left, **right}
+
+
 class SetupAgentState(TypedDict):
     """State for the Setup Agent ReAct loop.
 
@@ -47,8 +68,8 @@ class SetupAgentState(TypedDict):
     #   "timestamp": "2025-01-15T10:30:00"
     # }
 
-    # Outputs (file paths accumulate between steps)
-    outputs: dict  # {"merged_pdb": "path", "solvated_pdb": "path", ...}
+    # Outputs (file paths accumulate between steps via merge_outputs reducer)
+    outputs: Annotated[dict, merge_outputs]  # {"merged_pdb": "path", "solvated_pdb": "path", ...}
 
     # Raw notes for debugging - accumulate via operator.add
     raw_notes: Annotated[list[str], operator.add]

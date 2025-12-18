@@ -7,6 +7,24 @@ from datetime import datetime
 from pathlib import Path
 
 
+def canonical_tool_name(name: str) -> str:
+    """Canonicalize MCP tool name by removing server prefix.
+
+    MCP servers may return tool names with or without server prefixes:
+    - "structure__prepare_complex" → "prepare_complex"
+    - "prepare_complex" → "prepare_complex"
+
+    This ensures consistent tool name handling across the codebase.
+
+    Args:
+        name: Tool name (possibly with server prefix)
+
+    Returns:
+        Canonical tool name without server prefix
+    """
+    return name.split("__", 1)[1] if "__" in name else name
+
+
 def get_today_str() -> str:
     """Get current date formatted for prompts.
 
@@ -39,6 +57,9 @@ def compress_tool_result(tool_name: str, result: dict) -> dict:
     if not isinstance(result, dict):
         return result
 
+    # Canonicalize tool name for consistent matching
+    canonical_name = canonical_tool_name(tool_name)
+
     # Start with essential fields
     compressed = {
         "success": result.get("success", False),
@@ -46,8 +67,31 @@ def compress_tool_result(tool_name: str, result: dict) -> dict:
         "warnings": result.get("warnings", []),
     }
 
+    # Infer server type from tool name or result keys
+    is_structure_tool = (
+        "structure" in tool_name.lower()
+        or canonical_name in ("prepare_complex", "fetch_molecules", "inspect_molecules", "clean_protein", "clean_ligand")
+        or "merged_pdb" in result
+        or "inspection" in result
+    )
+    is_solvation_tool = (
+        "solvation" in tool_name.lower()
+        or canonical_name in ("solvate_structure", "embed_membrane")
+        or ("box_dimensions" in result and "output_file" in result)
+    )
+    is_amber_tool = (
+        "amber" in tool_name.lower()
+        or canonical_name in ("build_amber_system",)
+        or ("parm7" in result and "rst7" in result)
+    )
+    is_md_tool = (
+        "md_simulation" in tool_name.lower()
+        or canonical_name in ("run_md_simulation", "analyze_trajectory")
+        or "trajectory_file" in result
+    )
+
     # Tool-specific compression
-    if "structure_server" in tool_name:
+    if is_structure_tool:
         # Keep file paths and summaries, remove verbose inspection/split data
         for key in ["output_dir", "merged_pdb", "output_file"]:
             if key in result:
@@ -82,7 +126,7 @@ def compress_tool_result(tool_name: str, result: dict) -> dict:
         if "statistics" in result:
             compressed["statistics"] = result["statistics"]
 
-    elif "solvation_server" in tool_name:
+    elif is_solvation_tool:
         # Keep box dimensions and file paths
         for key in ["output_file", "box_dimensions", "output_dir"]:
             if key in result:
@@ -96,7 +140,7 @@ def compress_tool_result(tool_name: str, result: dict) -> dict:
                 "ions": stats.get("ions"),
             }
 
-    elif "amber_server" in tool_name:
+    elif is_amber_tool:
         # Keep topology files
         for key in ["parm7", "rst7", "output_dir"]:
             if key in result:
@@ -105,7 +149,7 @@ def compress_tool_result(tool_name: str, result: dict) -> dict:
         if "statistics" in result:
             compressed["statistics"] = result["statistics"]
 
-    elif "md_simulation_server" in tool_name:
+    elif is_md_tool:
         # Keep trajectory and analysis results
         for key in ["trajectory_file", "log_file", "output_dir", "analysis"]:
             if key in result:
@@ -258,14 +302,17 @@ def validate_step_prerequisites(step_name: str, outputs: dict) -> tuple[bool, li
         "run_simulation": ["prmtop", "rst7"],
     }
 
+    # Keys that require file existence validation
+    file_keys = {"merged_pdb", "solvated_pdb", "prmtop", "rst7"}
+
     required = prerequisites.get(step_name, [])
 
     for req in required:
         value = outputs.get(req)
         if value is None:
             errors.append(f"Missing required output: '{req}' for step '{step_name}'")
-        elif isinstance(value, str) and req.endswith("_pdb"):
-            # Validate file path exists for PDB files
+        elif req in file_keys and isinstance(value, str):
+            # Validate file path exists for file-based outputs
             if not Path(value).exists():
                 errors.append(f"Required file does not exist: {value}")
 

@@ -361,18 +361,19 @@ def list_servers():
     table = Table(title="Available MCP Servers")
     table.add_column("Server", style="cyan")
     table.add_column("Description", style="green")
-    
+
+    # Current server architecture (matches servers/ directory)
     servers = [
-        ("structure_server", "PDB retrieval and structure cleaning"),
-        ("genesis_server", "Boltz-2 structure generation from FASTA"),
-        ("complex_server", "Boltz-2 complex prediction + Smina refinement"),
-        ("ligand_server", "RDKit 3D generation, AmberTools GAFF2 parameterization"),
-        ("qc_min_server", "MolProbity QC checks + OpenMM minimization"),
+        ("structure_server", "PDB retrieval, structure repair, ligand GAFF2 parameterization"),
+        ("genesis_server", "Boltz-2 structure prediction from FASTA sequences"),
+        ("solvation_server", "Solvation (water box) and membrane embedding via packmol-memgen"),
+        ("amber_server", "Amber topology (parm7) and coordinate (rst7) generation via tleap"),
+        ("md_simulation_server", "MD execution with OpenMM, trajectory analysis with MDTraj"),
     ]
-    
+
     for server, desc in servers:
         table.add_row(server, desc)
-    
+
     console.print(table)
 
 

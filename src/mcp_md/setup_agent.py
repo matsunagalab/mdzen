@@ -26,6 +26,7 @@ from mcp_md.mcp_integration import create_mcp_client
 from mcp_md.prompts import compress_setup_prompt, setup_agent_prompt
 from mcp_md.state_setup import SetupAgentState, SetupOutputState, SETUP_STEPS
 from mcp_md.utils import (
+    canonical_tool_name,
     compress_tool_result,
     extract_output_paths,
     get_today_str,
@@ -94,28 +95,35 @@ compress_model = init_chat_model(model=settings.compress_model, temperature=0.0)
 def get_current_step_info(completed_steps: list) -> dict:
     """Determine current workflow step based on completed steps.
 
+    Uses "first incomplete step" logic to be robust against:
+    - Duplicate entries in completed_steps (from reducer accumulation)
+    - Out-of-order step completion
+
     Args:
-        completed_steps: List of completed step names
+        completed_steps: List of completed step names (may have duplicates)
 
     Returns:
         dict with current_step, next_tool, and input_requirements
     """
-    num_completed = len(completed_steps) if completed_steps else 0
+    # Use set for deduplication (handles operator.add reducer duplicates)
+    completed_set = set(completed_steps) if completed_steps else set()
 
-    if num_completed >= len(SETUP_STEPS):
-        return {
-            "current_step": "complete",
-            "next_tool": None,
-            "input_requirements": "All steps complete. Stop calling tools.",
-            "step_index": num_completed,
-        }
+    # Find first incomplete step in the defined order
+    for i, step in enumerate(SETUP_STEPS):
+        if step not in completed_set:
+            return {
+                "current_step": step,
+                "next_tool": STEP_TO_TOOL[step],
+                "input_requirements": STEP_INPUTS[step],
+                "step_index": i,
+            }
 
-    current_step = SETUP_STEPS[num_completed]
+    # All steps completed
     return {
-        "current_step": current_step,
-        "next_tool": STEP_TO_TOOL[current_step],
-        "input_requirements": STEP_INPUTS[current_step],
-        "step_index": num_completed,
+        "current_step": "complete",
+        "next_tool": None,
+        "input_requirements": "All steps complete. Stop calling tools.",
+        "step_index": len(SETUP_STEPS),
     }
 
 
@@ -205,12 +213,16 @@ async def tool_node(state: SetupAgentState) -> dict:
     """Execute MCP tools and log decisions with compression.
 
     For each tool call:
-    1. Execute the tool via MCP
-    2. Time the execution
-    3. Parse result safely (handles str/dict/other)
-    4. Compress the result for decision log
-    5. Extract file paths to update outputs (including box_dimensions, ligand_params)
+    1. Guard against missing tools (fail-safe)
+    2. Execute the tool via MCP wrapped in try/except
+    3. Time the execution
+    4. Parse result safely (handles str/dict/other)
+    5. Compress the result for decision log
+    6. Extract file paths to update outputs (including box_dimensions, ligand_params)
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     tool_calls = state["setup_messages"][-1].tool_calls
     client = get_mcp_client()
     mcp_tools = await client.get_tools()
@@ -222,40 +234,83 @@ async def tool_node(state: SetupAgentState) -> dict:
     raw_results = []
 
     for tool_call in tool_calls:
-        tool = tools_by_name[tool_call["name"]]
+        tool_name = tool_call["name"]
+        tool_id = tool_call["id"]
 
-        # Time execution
-        start_time = time.time()
-        raw_result = await tool.ainvoke(tool_call["args"])  # MCP tools must use ainvoke
-        duration = time.time() - start_time
+        # P0-3: Guard against missing tools (fail-safe)
+        if tool_name not in tools_by_name:
+            logger.warning(f"Tool '{tool_name}' not found in MCP tools")
+            error_result = {
+                "success": False,
+                "errors": [f"Tool '{tool_name}' not found. Available: {list(tools_by_name.keys())}"],
+                "suggested_action": "fix_parameters",
+                "action_message": f"Unknown tool '{tool_name}'. Check tool name spelling.",
+            }
+            tool_messages.append(
+                ToolMessage(
+                    content=json.dumps(error_result),
+                    name=tool_name,
+                    tool_call_id=tool_id,
+                )
+            )
+            raw_results.append(error_result)
+            decision_entries.append({
+                "tool": tool_name,
+                "parameters": tool_call["args"],
+                "result": error_result,
+                "duration_seconds": 0,
+                "timestamp": datetime.now().isoformat(),
+            })
+            continue
 
-        # Parse result safely (handles str, dict, or other types)
-        result = parse_tool_result(raw_result)
+        tool = tools_by_name[tool_name]
+
+        # P0-3: Wrap execution in try/except for robustness
+        try:
+            # Time execution
+            start_time = time.time()
+            raw_result = await tool.ainvoke(tool_call["args"])  # MCP tools must use ainvoke
+            duration = time.time() - start_time
+
+            # Parse result safely (handles str, dict, or other types)
+            result = parse_tool_result(raw_result)
+
+        except Exception as e:
+            logger.error(f"Tool '{tool_name}' execution failed: {e}")
+            duration = time.time() - start_time if 'start_time' in dir() else 0
+            result = {
+                "success": False,
+                "errors": [f"Tool execution failed: {str(e)}"],
+                "suggested_action": "report_and_stop",
+                "action_message": f"Tool '{tool_name}' raised exception: {type(e).__name__}",
+            }
 
         # Add error recovery suggestions for failed tools
         if isinstance(result, dict) and not result.get("success", True):
             errors = result.get("errors", [])
             error_text = " ".join(str(e).lower() for e in errors)
 
-            # can_continue flag means partial success is acceptable
-            if result.get("can_continue"):
-                result["suggested_action"] = "continue_with_partial"
-                result["action_message"] = "Partial success. Continue to next step."
-            # File not found - likely previous step issue
-            elif "not found" in error_text or "does not exist" in error_text:
-                result["suggested_action"] = "check_previous_step"
-                result["action_message"] = "Required file missing. Check if previous step completed."
-            # Parameter validation errors
-            elif "invalid" in error_text or "parameter" in error_text:
-                result["suggested_action"] = "fix_parameters"
-                result["action_message"] = "Invalid parameters. Review SimulationBrief settings."
-            # Timeout errors
-            elif "timeout" in error_text:
-                result["suggested_action"] = "retry_with_longer_timeout"
-                result["action_message"] = "Operation timed out. May need longer timeout."
-            else:
-                result["suggested_action"] = "report_and_stop"
-                result["action_message"] = "Unrecoverable error. Stopping workflow."
+            # Only add suggestions if not already present
+            if "suggested_action" not in result:
+                # can_continue flag means partial success is acceptable
+                if result.get("can_continue"):
+                    result["suggested_action"] = "continue_with_partial"
+                    result["action_message"] = "Partial success. Continue to next step."
+                # File not found - likely previous step issue
+                elif "not found" in error_text or "does not exist" in error_text:
+                    result["suggested_action"] = "check_previous_step"
+                    result["action_message"] = "Required file missing. Check if previous step completed."
+                # Parameter validation errors
+                elif "invalid" in error_text or "parameter" in error_text:
+                    result["suggested_action"] = "fix_parameters"
+                    result["action_message"] = "Invalid parameters. Review SimulationBrief settings."
+                # Timeout errors
+                elif "timeout" in error_text:
+                    result["suggested_action"] = "retry_with_longer_timeout"
+                    result["action_message"] = "Operation timed out. May need longer timeout."
+                else:
+                    result["suggested_action"] = "report_and_stop"
+                    result["action_message"] = "Unrecoverable error. Stopping workflow."
 
         raw_results.append(result)
 
@@ -263,17 +318,17 @@ async def tool_node(state: SetupAgentState) -> dict:
         tool_messages.append(
             ToolMessage(
                 content=json.dumps(result, default=str) if isinstance(result, dict) else str(result),
-                name=tool_call["name"],
-                tool_call_id=tool_call["id"],
+                name=tool_name,
+                tool_call_id=tool_id,
             )
         )
 
         # Token optimization: Compress result before logging
-        compressed_result = compress_tool_result(tool_call["name"], result)
+        compressed_result = compress_tool_result(tool_name, result)
 
         decision_entries.append(
             {
-                "tool": tool_call["name"],
+                "tool": tool_name,
                 "parameters": tool_call["args"],
                 "result": compressed_result,
                 "duration_seconds": round(duration, 2),
@@ -288,13 +343,15 @@ async def tool_node(state: SetupAgentState) -> dict:
         outputs_update.update(extract_output_paths(result))
 
     # Track completed steps based on which tools were successfully called
+    # P0-1: Use canonical_tool_name for consistent TOOL_TO_STEP lookup
     completed_steps_update = []
     for entry in decision_entries:
-        tool_name = entry["tool"]
+        raw_tool_name = entry["tool"]
+        canonical_name = canonical_tool_name(raw_tool_name)
         result = entry["result"]
         # Only mark as completed if the tool succeeded
-        if result.get("success", True) and tool_name in TOOL_TO_STEP:
-            step_name = TOOL_TO_STEP[tool_name]
+        if result.get("success", True) and canonical_name in TOOL_TO_STEP:
+            step_name = TOOL_TO_STEP[canonical_name]
             completed_steps_update.append(step_name)
 
     return {

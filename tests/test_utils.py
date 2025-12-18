@@ -314,14 +314,33 @@ class TestValidateStepPrerequisites:
         assert any("rst7" in e for e in errors)
 
     def test_run_simulation_with_topology_files(self):
-        """run_simulation passes with topology files."""
+        """run_simulation passes with topology files that exist."""
+        # Create temporary topology files
+        with tempfile.NamedTemporaryFile(suffix=".parm7", delete=False) as f1:
+            temp_prmtop = f1.name
+        with tempfile.NamedTemporaryFile(suffix=".rst7", delete=False) as f2:
+            temp_rst7 = f2.name
+        try:
+            outputs = {
+                "prmtop": temp_prmtop,
+                "rst7": temp_rst7,
+            }
+            is_valid, errors = validate_step_prerequisites("run_simulation", outputs)
+            assert is_valid is True
+            assert errors == []
+        finally:
+            Path(temp_prmtop).unlink(missing_ok=True)
+            Path(temp_rst7).unlink(missing_ok=True)
+
+    def test_run_simulation_with_nonexistent_files(self):
+        """run_simulation fails when topology files don't exist."""
         outputs = {
-            "prmtop": "/session/system.parm7",
-            "rst7": "/session/system.rst7",
+            "prmtop": "/nonexistent/system.parm7",
+            "rst7": "/nonexistent/system.rst7",
         }
         is_valid, errors = validate_step_prerequisites("run_simulation", outputs)
-        assert is_valid is True
-        assert errors == []
+        assert is_valid is False
+        assert any("does not exist" in e for e in errors)
 
     def test_unknown_step_has_no_prerequisites(self):
         """Unknown steps should have no prerequisites."""

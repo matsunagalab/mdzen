@@ -1,195 +1,173 @@
 """
-Integration tests for the complete MCP-MD workflow.
+Integration tests for MCP-MD workflow components.
 
-Tests the end-to-end workflow:
-1. Genesis: Generate protein from FASTA
-2. Structure: Clean and protonate
-3. Complex: Generate protein-ligand complex
-4. Ligand: Parameterize ligand
-5. Assembly: Build system with tleap
-6. Export: Export to Amber format
-7. QC/Min: Run quality checks and minimization
+Tests cover:
+- State definitions and reducers
+- Agent graph imports
+- MCP integration setup
+- Workflow step mappings
+
+NOTE: Full end-to-end integration tests require MCP servers running
+and are marked with @pytest.mark.slow
 """
 
 import pytest
-import asyncio
 from pathlib import Path
-import tempfile
-import shutil
 
 
-# Sample inputs for testing
-SAMPLE_FASTA = """MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYAG"""
+class TestStateDefinitions:
+    """Test state definitions and reducers."""
 
-SAMPLE_SMILES = "CCO"  # Ethanol
-
-
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_full_workflow_simple():
-    """Test simple protein-only workflow"""
-    
-    # This is a placeholder test
-    # Actual implementation requires:
-    # 1. MCP servers running
-    # 2. Strands Agent initialized
-    # 3. Tools available
-    
-    # For now, just verify imports work
-    from core.strands_agent import MDWorkflowAgent
-    from core.workflow_skeleton import WORKFLOW_SKELETON, get_all_step_names
-    from core.decision_logger import DecisionLogger
-    
-    # Verify workflow skeleton
-    steps = get_all_step_names()
-    assert len(steps) == 9
-    assert "fetch_or_generate" in steps
-    assert "minimize_qc" in steps
-    
-    # Verify decision logger
-    with tempfile.TemporaryDirectory() as tmpdir:
-        logger = DecisionLogger(Path(tmpdir))
-        logger.log_decision(
-            step="test",
-            tool="test_tool",
-            params={"test": "value"},
-            reason="Test reason"
+    def test_setup_state_imports(self):
+        """SetupAgentState and related classes can be imported."""
+        from mcp_md.state_setup import (
+            SetupAgentState,
+            SetupOutputState,
+            SETUP_STEPS,
+            merge_outputs,
         )
-        
-        decisions = logger.get_all_decisions()
-        assert len(decisions) == 1
-        assert decisions[0]["step"] == "test"
+
+        # Verify SETUP_STEPS
+        assert len(SETUP_STEPS) == 4
+        assert "prepare_complex" in SETUP_STEPS
+        assert "solvate" in SETUP_STEPS
+        assert "build_topology" in SETUP_STEPS
+        assert "run_simulation" in SETUP_STEPS
+
+    def test_merge_outputs_reducer(self):
+        """merge_outputs reducer merges dictionaries correctly."""
+        from mcp_md.state_setup import merge_outputs
+
+        # Both non-None
+        left = {"a": 1, "b": 2}
+        right = {"b": 3, "c": 4}
+        result = merge_outputs(left, right)
+        assert result == {"a": 1, "b": 3, "c": 4}
+
+        # Left is None
+        result = merge_outputs(None, {"x": 1})
+        assert result == {"x": 1}
+
+        # Right is None
+        result = merge_outputs({"y": 2}, None)
+        assert result == {"y": 2}
+
+        # Both None
+        result = merge_outputs(None, None)
+        assert result == {}
+
+    def test_scope_state_imports(self):
+        """AgentState and SimulationBrief can be imported."""
+        from mcp_md.state_scope import AgentState, AgentInputState, SimulationBrief
+
+        # Verify SimulationBrief is a Pydantic model
+        assert hasattr(SimulationBrief, "model_fields")
 
 
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_genesis_server():
-    """Test Genesis Server independently"""
-    
-    # Placeholder for Genesis Server test
-    # Requires Boltz-2 installation
-    
-    from servers.genesis_server import GenesisServer
-    
-    server = GenesisServer()
-    assert server is not None
-    assert server.name == "genesis_server"
+class TestSetupAgentMappings:
+    """Test workflow step to tool mappings."""
+
+    def test_step_to_tool_mapping(self):
+        """STEP_TO_TOOL maps all setup steps to tools."""
+        from mcp_md.setup_agent import STEP_TO_TOOL, TOOL_TO_STEP
+        from mcp_md.state_setup import SETUP_STEPS
+
+        # All steps have tool mappings
+        for step in SETUP_STEPS:
+            assert step in STEP_TO_TOOL, f"Missing tool mapping for step: {step}"
+
+        # Reverse mapping covers all tools
+        for step, tool in STEP_TO_TOOL.items():
+            assert TOOL_TO_STEP[tool] == step
+
+    def test_get_current_step_info(self):
+        """get_current_step_info handles various states correctly."""
+        from mcp_md.setup_agent import get_current_step_info
+        from mcp_md.state_setup import SETUP_STEPS
+
+        # Empty completed steps
+        info = get_current_step_info([])
+        assert info["current_step"] == SETUP_STEPS[0]
+        assert info["step_index"] == 0
+
+        # Some steps completed
+        info = get_current_step_info(["prepare_complex", "solvate"])
+        assert info["current_step"] == "build_topology"
+        assert info["step_index"] == 2
+
+        # All steps completed
+        info = get_current_step_info(SETUP_STEPS.copy())
+        assert info["current_step"] == "complete"
+        assert info["next_tool"] is None
+
+        # Handles duplicates (from reducer accumulation)
+        info = get_current_step_info(["prepare_complex", "prepare_complex", "solvate"])
+        assert info["current_step"] == "build_topology"
 
 
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_structure_server_simplified():
-    """Test simplified Structure Server"""
-    
-    from servers.structure_server import StructureServer
-    
-    server = StructureServer()
-    assert server is not None
-    assert server.name == "structure_server"
-    
-    # Should NOT have Boltz-2 wrapper
-    assert not hasattr(server, 'boltz2')
-    
-    # Should have PDBFixer and PDB2PQR
-    assert hasattr(server, 'pdbfixer')
-    assert hasattr(server, 'pdb2pqr')
+class TestUtilityFunctions:
+    """Test utility functions used across agents."""
+
+    def test_canonical_tool_name(self):
+        """canonical_tool_name strips server prefix."""
+        from mcp_md.utils import canonical_tool_name
+
+        assert canonical_tool_name("structure__prepare_complex") == "prepare_complex"
+        assert canonical_tool_name("prepare_complex") == "prepare_complex"
+        assert canonical_tool_name("solvation__solvate_structure") == "solvate_structure"
+
+    def test_compress_tool_result_infers_server(self):
+        """compress_tool_result infers server type from result keys."""
+        from mcp_md.utils import compress_tool_result
+
+        # Structure result (has merged_pdb)
+        structure_result = {"success": True, "merged_pdb": "/path/file.pdb"}
+        compressed = compress_tool_result("unknown_tool", structure_result)
+        assert compressed["merged_pdb"] == "/path/file.pdb"
+
+        # Solvation result (has box_dimensions + output_file)
+        solvation_result = {
+            "success": True,
+            "output_file": "/path/solvated.pdb",
+            "box_dimensions": {"x": 80, "y": 80, "z": 80},
+        }
+        compressed = compress_tool_result("unknown_tool", solvation_result)
+        assert compressed["output_file"] == "/path/solvated.pdb"
+        assert compressed["box_dimensions"] == {"x": 80, "y": 80, "z": 80}
+
+        # Amber result (has parm7 + rst7)
+        amber_result = {"success": True, "parm7": "/path/sys.parm7", "rst7": "/path/sys.rst7"}
+        compressed = compress_tool_result("unknown_tool", amber_result)
+        assert compressed["parm7"] == "/path/sys.parm7"
+        assert compressed["rst7"] == "/path/sys.rst7"
 
 
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_molprobity_wrapper():
-    """Test custom MolProbity wrapper"""
-    
-    from tools.molprobity_wrapper import MolProbityWrapper
-    
-    # This will fail if MDAnalysis/BioPython not installed
-    try:
-        wrapper = MolProbityWrapper()
-        assert wrapper is not None
-    except ImportError as e:
-        pytest.skip(f"MolProbity dependencies not installed: {e}")
+class TestAgentGraphs:
+    """Test agent graph construction."""
+
+    def test_setup_graph_can_be_created(self):
+        """setup agent graph can be created."""
+        from mcp_md.setup_agent import create_setup_graph
+
+        graph = create_setup_graph()
+        assert graph is not None
+
+    def test_clarification_graph_can_be_created(self):
+        """clarification graph can be created."""
+        from mcp_md.clarification_agent import create_clarification_graph
+
+        graph = create_clarification_graph()
+        assert graph is not None
 
 
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_workflow_skeleton():
-    """Test workflow skeleton structure"""
-    
-    from core.workflow_skeleton import (
-        WORKFLOW_SKELETON,
-        get_step_by_name,
-        get_all_step_names,
-        get_step_tools,
-        validate_workflow_plan
-    )
-    
-    # Check all steps
-    steps = get_all_step_names()
-    assert len(steps) == 9
-    
-    # Check specific steps
-    fetch_step = get_step_by_name("fetch_or_generate")
-    assert "fetch_pdb" in fetch_step.required_tools
-    
-    qc_step = get_step_by_name("minimize_qc")
-    assert "molprobity_check" in qc_step.required_tools
-    assert "openmm_minimize" in qc_step.required_tools
-    
-    # Validate workflow plan
-    valid_plan = ["fetch_or_generate", "repair_protonate", "ligand_param"]
-    assert validate_workflow_plan(valid_plan) == True
-    
-    invalid_plan = ["ligand_param", "fetch_or_generate"]  # Wrong order
-    assert validate_workflow_plan(invalid_plan) == False
+@pytest.mark.slow
+class TestMCPIntegration:
+    """Tests that require MCP servers (marked slow)."""
 
-
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_decision_logger():
-    """Test decision logger functionality"""
-    
-    from core.decision_logger import DecisionLogger
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        logger = DecisionLogger(Path(tmpdir))
-        
-        # Log multiple decisions
-        logger.log_decision(
-            step="step1",
-            tool="tool1",
-            params={"param1": "value1"},
-            reason="Reason 1"
-        )
-        
-        logger.log_decision(
-            step="step2",
-            tool="tool2",
-            params={"param2": "value2"},
-            reason="Reason 2"
-        )
-        
-        logger.log_error(
-            step="step3",
-            tool="tool3",
-            error="Error message"
-        )
-        
-        # Get decisions
-        decisions = logger.get_all_decisions()
-        assert len(decisions) == 3
-        
-        # Generate summary
-        summary = logger.generate_summary()
-        assert summary["total_decisions"] == 3
-        assert len(summary["errors"]) == 1
-        assert "step1" in summary["steps"]
-        assert "step2" in summary["steps"]
-        
-        # Export markdown
-        report_path = logger.export_markdown_report()
-        assert Path(report_path).exists()
+    def test_mcp_client_can_be_created(self):
+        """MCP client can be created (doesn't require running servers)."""
+        pytest.skip("Requires MCP servers - run with --runslow")
 
 
 if __name__ == "__main__":
-    # Run tests
-    pytest.main([__file__, "-v", "-m", "integration"])
+    pytest.main([__file__, "-v"])

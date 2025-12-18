@@ -35,6 +35,10 @@ class FullAgentState(TypedDict):
     # Phase 1 outputs
     simulation_brief: Optional[dict]
 
+    # Session directory (shared across all phases)
+    # All MCP tools write outputs to subdirectories within this directory
+    session_dir: Optional[str]
+
     # Phase 2 state
     setup_messages: Annotated[Sequence[BaseMessage], add_messages]
     decision_log: Annotated[list[dict], operator.add]
@@ -56,6 +60,7 @@ class FullAgentOutputState(TypedDict):
     """
 
     simulation_brief: dict
+    session_dir: str  # Root directory containing all workflow outputs
     outputs: dict
     decision_log: list[dict]
     compressed_setup: str

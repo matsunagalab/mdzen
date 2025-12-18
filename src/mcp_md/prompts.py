@@ -200,6 +200,16 @@ You have access to MCP tools from 5 servers:
 You can call tools in series - this is a tool-calling loop.
 </Available_Tools>
 
+<Session_Directory>
+IMPORTANT: All tool outputs MUST be written to this session directory.
+{session_dir}
+
+When calling ANY tool that accepts an `output_dir` parameter, you MUST pass:
+  output_dir="{session_dir}"
+
+This ensures all workflow outputs are organized in one place.
+</Session_Directory>
+
 <Simulation_Brief>
 {simulation_brief}
 </Simulation_Brief>
@@ -214,6 +224,7 @@ IMPORTANT: These outputs contain file paths from previous steps. You MUST use th
 {outputs}
 
 Key fields to use:
+- session_dir: Root directory for all outputs -> Pass as output_dir to ALL tools
 - merged_pdb: Output from prepare_complex -> Use as input for solvate_structure
 - solvated_pdb: Output from solvate_structure -> Use as input for build_amber_system
 - box_dimensions: Output from solvate_structure -> REQUIRED for build_amber_system (explicit solvent)
@@ -223,19 +234,23 @@ Key fields to use:
 <Your_Task>
 Execute the 4-step MD workflow:
 1. **prepare_complex**: Use structure_server to fetch/clean/parameterize
+   - MUST pass: output_dir=session_dir
    - Output: merged.pdb + ligand params (mol2/frcmod)
 
 2. **solvate**: Use solvation_server to add water box
+   - MUST pass: output_dir=session_dir
    - Input: merged.pdb from outputs["merged_pdb"]
    - Output: solvated.pdb + box_dimensions
 
 3. **build_topology**: Use amber_server to generate Amber files
+   - MUST pass: output_dir=session_dir
    - Input: solvated.pdb from outputs["solvated_pdb"]
    - Input: box_dimensions from outputs["box_dimensions"] (REQUIRED!)
    - Input: ligand_params (if ligands present)
    - Output: system.prmtop + system.rst7
 
 4. **run_simulation**: Use md_simulation_server for MD
+   - MUST pass: output_dir=session_dir
    - Input: prmtop from outputs["prmtop"]
    - Input: rst7 from outputs["rst7"]
    - Output: trajectory.dcd + logs
@@ -246,57 +261,64 @@ Call ONE tool at a time. After tool execution, check results before proceeding.
 <Instructions>
 1. **Analyze current state**: What step are we on? What outputs do we have?
 2. **Select next tool**: Based on workflow and SimulationBrief parameters
-3. **Map parameters from outputs**: Extract file paths from <Current_Outputs>
-4. **Call tool**: ONE tool per turn (NOT multiple in parallel)
-5. **Wait for results**: Tool results appear in next message
+3. **ALWAYS pass output_dir**: Every tool call MUST include output_dir=session_dir
+4. **Map parameters from outputs**: Extract file paths from <Current_Outputs>
+5. **Call tool**: ONE tool per turn (NOT multiple in parallel)
+6. **Wait for results**: Tool results appear in next message
 
-CRITICAL: When calling build_amber_system, you MUST pass box_dimensions from outputs!
+CRITICAL:
+- ALWAYS pass output_dir=session_dir to ALL tool calls!
+- When calling build_amber_system, you MUST pass box_dimensions from outputs!
 
 When all 4 steps complete, stop calling tools (no tool_calls in response).
 </Instructions>
 
 <Example_Workflow>
-Turn 1: No outputs yet
+Turn 1: No outputs yet (but session_dir is available)
 -> Call prepare_complex(
+    output_dir="{session_dir}",           # REQUIRED: Always pass session_dir!
     structure_file="1AKE.pdb",
-    select_chains=["A", "B"],         # From SimulationBrief.select_chains (if specified)
-    include_types=["protein", "ligand", "ion"],  # From SimulationBrief.include_types
-    ph=7.4,                           # From SimulationBrief.ph
-    cap_termini=False,                # From SimulationBrief.cap_termini
-    ligand_smiles={{"LIG": "..."}},   # From SimulationBrief.ligand_smiles (if ligands present)
-    charge_method="bcc",              # From SimulationBrief.charge_method
-    atom_type="gaff2"                 # From SimulationBrief.atom_type
+    select_chains=["A", "B"],
+    include_types=["protein", "ligand", "ion"],
+    ph=7.4,
+    cap_termini=False,
+    ligand_smiles={{"LIG": "..."}},
+    charge_method="bcc",
+    atom_type="gaff2"
   )
 -> Wait for tool result
 
-Turn 2: outputs = {{"merged_pdb": "output/abc/merged.pdb", "ligand_params": [...]}}
+Turn 2: outputs = {{"session_dir": "...", "merged_pdb": "session_xxx/abc/merged.pdb", ...}}
 -> Call solvate_structure(
+    output_dir=outputs["session_dir"],    # REQUIRED: Always pass session_dir!
     pdb_file=outputs["merged_pdb"],
-    dist=12.0,                        # From SimulationBrief.box_padding
-    cubic=True                        # From SimulationBrief.cubic_box
+    dist=12.0,
+    cubic=True
   )
 -> Wait for tool result
 
-Turn 3: outputs = {{"merged_pdb": "...", "solvated_pdb": "output/def/solvated.pdb", "box_dimensions": {{"box_a": 50.5, "box_b": 50.5, "box_c": 50.5}}, "ligand_params": [...]}}
+Turn 3: outputs = {{"...", "solvated_pdb": "session_xxx/def/solvated.pdb", "box_dimensions": {{...}}}}
 -> Call build_amber_system(
+    output_dir=outputs["session_dir"],    # REQUIRED: Always pass session_dir!
     pdb_file=outputs["solvated_pdb"],
-    ligand_params=outputs.get("ligand_params", []),  # From outputs (if ligands present)
-    box_dimensions=outputs["box_dimensions"],        # From outputs (REQUIRED for explicit solvent!)
-    forcefield="ff19SB",                             # From SimulationBrief.force_field
-    water_model="tip3p",                             # From SimulationBrief.water_model
-    is_membrane=False                                # From SimulationBrief.is_membrane
+    ligand_params=outputs.get("ligand_params", []),
+    box_dimensions=outputs["box_dimensions"],
+    forcefield="ff19SB",
+    water_model="tip3p",
+    is_membrane=False
   )
 -> Wait for tool result
 
-Turn 4: outputs = {{"...", "prmtop": "output/ghi/system.parm7", "rst7": "output/ghi/system.rst7"}}
+Turn 4: outputs = {{"...", "prmtop": "session_xxx/ghi/system.parm7", "rst7": "session_xxx/ghi/system.rst7"}}
 -> Call run_md_simulation(
+    output_dir=outputs["session_dir"],    # REQUIRED: Always pass session_dir!
     prmtop_file=outputs["prmtop"],
     inpcrd_file=outputs["rst7"],
-    simulation_time_ns=1.0,              # From SimulationBrief.simulation_time_ns
-    temperature_kelvin=300.0,            # From SimulationBrief.temperature
-    pressure_bar=1.0,                    # From SimulationBrief.pressure_bar
-    timestep_fs=2.0,                     # From SimulationBrief.timestep
-    output_frequency_ps=10.0             # From SimulationBrief.output_frequency_ps
+    simulation_time_ns=1.0,
+    temperature_kelvin=300.0,
+    pressure_bar=1.0,
+    timestep_fs=2.0,
+    output_frequency_ps=10.0
   )
 -> Wait for tool result
 

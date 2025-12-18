@@ -73,8 +73,10 @@ async def llm_call(state: SetupAgentState) -> dict:
     model_with_tools = model.bind_tools(mcp_tools)
 
     # Format prompt with current state
+    session_dir = state.get("session_dir", "")
     prompt = setup_agent_prompt.format(
         date=get_today_str(),
+        session_dir=session_dir,
         simulation_brief=json.dumps(state.get("simulation_brief", {}), indent=2),
         completed_steps=state.get("completed_steps", []),
         outputs=json.dumps(state.get("outputs", {}), indent=2),

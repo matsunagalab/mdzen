@@ -8,6 +8,7 @@ This module integrates all three phases of MD setup into a single LangGraph work
 Uses AsyncSqliteSaver for checkpoint persistence and human-in-the-loop feedback.
 """
 
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -42,6 +43,9 @@ def prepare_setup_input(state: FullAgentState) -> dict:
 
     Converts SimulationBrief from Phase 1 to the format expected by
     the setup agent (Phase 2).
+
+    Also generates a unique session directory where all MCP tools
+    will write their outputs, ensuring organized file management.
     """
     simulation_brief = state.get("simulation_brief", {})
 
@@ -53,12 +57,20 @@ def prepare_setup_input(state: FullAgentState) -> dict:
     else:
         brief_dict = simulation_brief
 
+    # Generate unique session directory for all workflow outputs
+    # Format: output/session_{8-char-uuid}/
+    session_id = uuid.uuid4().hex[:8]
+    session_dir = Path("output") / f"session_{session_id}"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    session_dir_str = str(session_dir.resolve())
+
     return {
         "simulation_brief": brief_dict,
+        "session_dir": session_dir_str,
         "setup_messages": [HumanMessage(content="Starting MD setup")],
         "completed_steps": [],
         "current_step_index": 0,
-        "outputs": {},
+        "outputs": {"session_dir": session_dir_str},  # Include in outputs for easy access
     }
 
 
@@ -70,6 +82,7 @@ def prepare_validation_input(state: FullAgentState) -> dict:
     """
     return {
         "simulation_brief": state.get("simulation_brief", {}),
+        "session_dir": state.get("session_dir", ""),
         "setup_outputs": state.get("outputs", {}),
         "decision_log": state.get("decision_log", []),
         "compressed_setup": state.get("compressed_setup", ""),

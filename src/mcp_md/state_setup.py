@@ -15,6 +15,7 @@ class SetupAgentState(TypedDict):
 
     This state is used by the setup agent to track:
     - Input from clarification phase (simulation_brief)
+    - Session directory for all outputs (session_dir)
     - Tool-calling conversation (setup_messages)
     - Execution progress (completed_steps, current_step_index)
     - Results and logs (decision_log, outputs, raw_notes)
@@ -23,6 +24,10 @@ class SetupAgentState(TypedDict):
 
     # Input from Phase 1 (Clarification)
     simulation_brief: dict
+
+    # Session directory - all MCP tools should use output_dir=session_dir
+    # This ensures all workflow outputs are organized under one directory
+    session_dir: str
 
     # ReAct loop state - messages accumulate via add_messages reducer
     setup_messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -58,6 +63,7 @@ class SetupOutputState(TypedDict):
     This defines what gets passed to Phase 3 (Validation).
     """
 
+    session_dir: str  # Root directory for all outputs
     outputs: dict
     decision_log: list[dict]
     compressed_setup: str

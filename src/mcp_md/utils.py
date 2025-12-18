@@ -4,6 +4,7 @@ This module contains shared utility functions used across multiple agents.
 """
 
 from datetime import datetime
+from pathlib import Path
 
 
 def get_today_str() -> str:
@@ -231,3 +232,41 @@ def format_duration(seconds: float) -> str:
     minutes = int(seconds // 60)
     secs = seconds % 60
     return f"{minutes}m {secs:.1f}s"
+
+
+def validate_step_prerequisites(step_name: str, outputs: dict) -> tuple[bool, list[str]]:
+    """Validate that prerequisites for a workflow step are met.
+
+    Checks that required outputs from previous steps exist before
+    proceeding to the next step. This prevents cryptic errors from
+    MCP tools when required files are missing.
+
+    Args:
+        step_name: Name of the step to validate prerequisites for
+        outputs: Current outputs dictionary from state
+
+    Returns:
+        Tuple of (is_valid, list of error messages)
+    """
+    errors = []
+
+    # Define prerequisites for each step
+    prerequisites = {
+        "prepare_complex": [],  # First step, no prerequisites
+        "solvate": ["merged_pdb"],
+        "build_topology": ["solvated_pdb", "box_dimensions"],
+        "run_simulation": ["prmtop", "rst7"],
+    }
+
+    required = prerequisites.get(step_name, [])
+
+    for req in required:
+        value = outputs.get(req)
+        if value is None:
+            errors.append(f"Missing required output: '{req}' for step '{step_name}'")
+        elif isinstance(value, str) and req.endswith("_pdb"):
+            # Validate file path exists for PDB files
+            if not Path(value).exists():
+                errors.append(f"Required file does not exist: {value}")
+
+    return (len(errors) == 0, errors)

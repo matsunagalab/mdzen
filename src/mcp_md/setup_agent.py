@@ -18,14 +18,20 @@ from datetime import datetime
 from typing import Literal
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 
 from mcp_md.config import settings
 from mcp_md.mcp_integration import create_mcp_client
 from mcp_md.prompts import compress_setup_prompt, setup_agent_prompt
 from mcp_md.state_setup import SetupAgentState, SetupOutputState, SETUP_STEPS
-from mcp_md.utils import compress_tool_result, extract_output_paths, get_today_str, parse_tool_result
+from mcp_md.utils import (
+    compress_tool_result,
+    extract_output_paths,
+    get_today_str,
+    parse_tool_result,
+    validate_step_prerequisites,
+)
 
 
 # =============================================================================
@@ -130,6 +136,22 @@ async def llm_call(state: SetupAgentState) -> dict:
     # Determine current step in workflow
     completed_steps = state.get("completed_steps", [])
     step_info = get_current_step_info(completed_steps)
+    current_step = step_info["current_step"]
+
+    # Validate prerequisites before proceeding (prevents cryptic MCP tool errors)
+    if current_step != "complete":
+        is_valid, prereq_errors = validate_step_prerequisites(
+            current_step,
+            state.get("outputs", {})
+        )
+        if not is_valid:
+            # Return error message with clear guidance instead of calling tool
+            error_msg = (
+                f"⚠️ Cannot proceed with step '{current_step}'. "
+                f"Prerequisites not met:\n" + "\n".join(f"  - {e}" for e in prereq_errors) +
+                "\n\nPlease check if the previous step completed successfully."
+            )
+            return {"setup_messages": [AIMessage(content=error_msg)]}
 
     # Format completed steps for display (e.g., "prepare_complex → solvate")
     completed_display = " → ".join(completed_steps) if completed_steps else "(none yet)"
@@ -285,14 +307,38 @@ async def tool_node(state: SetupAgentState) -> dict:
 
 
 def should_continue(state: SetupAgentState) -> Literal["tool_node", "compress_setup"]:
-    """Route based on whether LLM wants to call more tools.
+    """Route based on workflow completion status and pending tool calls.
+
+    Decision logic:
+    1. If all 4 steps are completed → compress_setup (done)
+    2. If LLM has pending tool calls → tool_node (continue)
+    3. Otherwise → compress_setup (avoid infinite loop, log warning)
 
     Returns:
         "tool_node" if there are pending tool calls
-        "compress_setup" if the workflow is complete
+        "compress_setup" if workflow is complete or no more tools to call
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Check if all steps are completed
+    completed_steps = state.get("completed_steps", [])
+    if len(completed_steps) >= len(SETUP_STEPS):
+        logger.info(f"All {len(SETUP_STEPS)} steps completed: {completed_steps}")
+        return "compress_setup"
+
+    # Check for pending tool calls
     last_message = state["setup_messages"][-1]
-    return "tool_node" if last_message.tool_calls else "compress_setup"
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        return "tool_node"
+
+    # No tool calls but workflow not complete - log warning and proceed
+    # (avoids infinite loop if LLM doesn't request more tools)
+    logger.warning(
+        f"No tool calls but only {len(completed_steps)}/{len(SETUP_STEPS)} steps completed. "
+        f"Completed: {completed_steps}. Proceeding to compress_setup."
+    )
+    return "compress_setup"
 
 
 def compress_setup(state: SetupAgentState) -> dict:

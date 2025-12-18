@@ -22,6 +22,11 @@ from mcp.server.fastmcp import FastMCP
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from common.utils import setup_logger, ensure_directory, create_unique_subdir
 from common.base import BaseToolWrapper
+from common.errors import (
+    create_file_not_found_error,
+    create_tool_not_available_error,
+    create_validation_error,
+)
 
 
 def generate_job_id() -> str:
@@ -342,35 +347,41 @@ def build_amber_system(
     # Validate input PDB file
     pdb_path = Path(pdb_file).resolve()
     if not pdb_path.exists():
-        result["errors"].append(f"Input PDB file not found: {pdb_file}")
         logger.error(f"Input PDB file not found: {pdb_file}")
-        return result
-    
+        return create_file_not_found_error(str(pdb_file), "Input PDB file")
+
     # Check tleap availability
     if not tleap_wrapper.is_available():
-        result["errors"].append("tleap not found in PATH")
-        result["errors"].append("Hint: Install AmberTools or activate the mcp-md conda environment")
         logger.error("tleap not available")
-        return result
-    
+        return create_tool_not_available_error(
+            "tleap",
+            "Install AmberTools or activate the mcp-md conda environment"
+        )
+
     # Validate force field
     protein_ff = PROTEIN_FORCEFIELDS.get(forcefield)
     if not protein_ff:
-        result["errors"].append(f"Unknown force field: {forcefield}")
-        result["errors"].append(f"Hint: Available options: {list(PROTEIN_FORCEFIELDS.keys())}")
         logger.error(f"Unknown force field: {forcefield}")
-        return result
-    
+        return create_validation_error(
+            "forcefield",
+            f"Unknown force field: {forcefield}",
+            expected=f"One of: {list(PROTEIN_FORCEFIELDS.keys())}",
+            actual=forcefield
+        )
+
     # Validate water model (for explicit solvent)
     water_ff = None
     ion_params = None
     if box_dimensions:
         water_ff = WATER_FORCEFIELDS.get(water_model.lower())
         if not water_ff:
-            result["errors"].append(f"Unknown water model: {water_model}")
-            result["errors"].append(f"Hint: Available options: {list(WATER_FORCEFIELDS.keys())}")
             logger.error(f"Unknown water model: {water_model}")
-            return result
+            return create_validation_error(
+                "water_model",
+                f"Unknown water model: {water_model}",
+                expected=f"One of: {list(WATER_FORCEFIELDS.keys())}",
+                actual=water_model
+            )
         ion_params = WATER_ION_PARAMS.get(water_model.lower(), "frcmod.ionsjc_tip3p")
     
     # Validate ligand parameters

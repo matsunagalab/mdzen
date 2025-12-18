@@ -16,12 +16,12 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb
+from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb, create_unique_subdir
 from common.base import BaseToolWrapper
 
 
@@ -275,24 +275,23 @@ def solvate_structure(
         result["errors"].append("Hint: Install AmberTools or activate the mcp-md conda environment")
         logger.error("packmol-memgen not available")
         return result
-    
-    # Setup output directory
+
+    # Setup output directory with human-readable name
     if output_dir is None:
-        out_dir = WORKING_DIR / job_id
+        out_dir = create_unique_subdir(WORKING_DIR, "solvate")
     else:
-        out_dir = Path(output_dir) / job_id
-    ensure_directory(out_dir)
+        out_dir = create_unique_subdir(output_dir, "solvate")
     result["output_dir"] = str(out_dir)
-    
+
     # Copy input file to output directory for packmol-memgen
     import shutil
     input_copy = out_dir / pdb_path.name
     shutil.copy(pdb_path, input_copy)
-    
+
     # Output file
     output_file = out_dir / f"{output_name}.pdb"
     packlog = out_dir / f"{output_name}_packmol"
-    
+
     try:
         # Build packmol-memgen command
         args = [
@@ -555,24 +554,23 @@ def embed_in_membrane(
         result["errors"].append("Hint: Install AmberTools or activate the mcp-md conda environment")
         logger.error("packmol-memgen not available")
         return result
-    
-    # Setup output directory
+
+    # Setup output directory with human-readable name
     if output_dir is None:
-        out_dir = WORKING_DIR / job_id
+        out_dir = create_unique_subdir(WORKING_DIR, "membrane")
     else:
-        out_dir = Path(output_dir) / job_id
-    ensure_directory(out_dir)
+        out_dir = create_unique_subdir(output_dir, "membrane")
     result["output_dir"] = str(out_dir)
-    
+
     # Copy input file to output directory for packmol-memgen
     import shutil
     input_copy = out_dir / pdb_path.name
     shutil.copy(pdb_path, input_copy)
-    
+
     # Output file
     output_file = out_dir / f"{output_name}.pdb"
     packlog = out_dir / f"{output_name}_packmol"
-    
+
     try:
         # Build packmol-memgen command
         args = [

@@ -95,12 +95,12 @@ def run_command(
             timeout=timeout,
             check=True
         )
-        logger.debug(f"Command completed successfully")
+        logger.debug("Command completed successfully")
         return result
     except subprocess.CalledProcessError as e:
         logger.error(f"Command failed: {e.stderr}")
         raise
-    except subprocess.TimeoutExpired as e:
+    except subprocess.TimeoutExpired:
         logger.error(f"Command timed out after {timeout}s")
         raise
 
@@ -298,15 +298,72 @@ def validate_smiles(smiles: str) -> bool:
 
 class WorkingDirectory:
     """Context manager to temporarily change working directory"""
-    
+
     def __init__(self, path: Union[str, Path]):
         self.path = Path(path)
         self.original_dir = Path.cwd()
-    
+
     def __enter__(self):
         os.chdir(self.path)
         return self.path
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         os.chdir(self.original_dir)
+
+
+def create_unique_subdir(base_dir: Union[str, Path], name: str) -> Path:
+    """Create a uniquely-named subdirectory within base_dir.
+
+    Creates a subdirectory with a human-readable name. If the name already
+    exists, appends a numeric suffix (_2, _3, etc.) to ensure uniqueness.
+
+    This is designed for session-based workflows where each MCP tool creates
+    a predictably-named subdirectory:
+        session_abc123/
+        ├── prepare_complex/    # structure_server
+        ├── solvate/            # solvation_server
+        ├── amber/              # amber_server
+        ├── md_simulation/      # md_simulation_server
+        └── boltz/              # genesis_server
+
+    Args:
+        base_dir: Parent directory (e.g., session directory)
+        name: Desired subdirectory name (e.g., "solvate", "amber")
+
+    Returns:
+        Path to the created subdirectory (absolute path)
+
+    Example:
+        >>> # First call creates "solvate"
+        >>> create_unique_subdir("/output/session_abc", "solvate")
+        PosixPath('/output/session_abc/solvate')
+
+        >>> # Second call creates "solvate_2"
+        >>> create_unique_subdir("/output/session_abc", "solvate")
+        PosixPath('/output/session_abc/solvate_2')
+    """
+    base_path = Path(base_dir).resolve()
+    ensure_directory(base_path)
+
+    # Try the base name first
+    target_dir = base_path / name
+    if not target_dir.exists():
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return target_dir
+
+    # Name exists, find next available suffix
+    suffix = 2
+    while True:
+        target_dir = base_path / f"{name}_{suffix}"
+        if not target_dir.exists():
+            target_dir.mkdir(parents=True, exist_ok=True)
+            return target_dir
+        suffix += 1
+        # Safety limit to prevent infinite loop
+        if suffix > 1000:
+            # Fall back to UUID-based name
+            fallback_name = f"{name}_{generate_job_id(4)}"
+            target_dir = base_path / fallback_name
+            target_dir.mkdir(parents=True, exist_ok=True)
+            return target_dir
 

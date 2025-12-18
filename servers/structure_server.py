@@ -13,7 +13,6 @@ Provides MCP tools for:
 
 import httpx
 import json
-import logging
 import os
 import re
 import shutil
@@ -27,8 +26,8 @@ from pdbfixer import PDBFixer
 from openmm.app import PDBFile
 from mcp.server.fastmcp import FastMCP
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__))) 
-from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb, get_pdb_chains
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb, get_pdb_chains, create_unique_subdir
 from common.base import BaseToolWrapper
 
 
@@ -245,7 +244,7 @@ def _assign_bond_orders_from_smiles(pdb_mol, smiles: str):
     except Exception as e:
         raise ValueError(f"Sanitization failed after template matching: {e}")
     
-    logger.info(f"Successfully assigned bond orders from SMILES template")
+    logger.info("Successfully assigned bond orders from SMILES template")
     return new_mol
 
 
@@ -267,7 +266,6 @@ def _optimize_ligand_rdkit(mol, max_iters: int = 200, force_field: str = "MMFF94
         >>> mol = Chem.MolFromMolFile("ligand.sdf")
         >>> opt_mol, success = _optimize_ligand_rdkit(mol)
     """
-    from rdkit import Chem
     from rdkit.Chem import AllChem
     
     # Ensure molecule has 3D coordinates
@@ -729,7 +727,7 @@ async def fetch_molecules(pdb_id: str, source: str = "pdb", prefer_format: str =
                     r = await client.get(fallback_url)
                     if r.status_code != 200:
                         result["errors"].append(f"Structure not found: {pdb_id} (HTTP {r.status_code})")
-                        result["errors"].append(f"Hint: Verify the PDB ID is correct. Try searching at https://www.rcsb.org/")
+                        result["errors"].append("Hint: Verify the PDB ID is correct. Try searching at https://www.rcsb.org/")
                         return result
                     url, ext, content = fallback_url, fallback_ext, r.content
                     result["file_format"] = fallback_ext
@@ -742,7 +740,7 @@ async def fetch_molecules(pdb_id: str, source: str = "pdb", prefer_format: str =
                 r = await client.get(url)
                 if r.status_code != 200:
                     result["errors"].append(f"AlphaFold structure not found: {pdb_id} (HTTP {r.status_code})")
-                    result["errors"].append(f"Hint: For AlphaFold, use UniProt ID (e.g., 'P12345'), not PDB ID")
+                    result["errors"].append("Hint: For AlphaFold, use UniProt ID (e.g., 'P12345'), not PDB ID")
                     return result
                 content = r.content
                 
@@ -754,7 +752,7 @@ async def fetch_molecules(pdb_id: str, source: str = "pdb", prefer_format: str =
                 r = await client.get(url)
                 if r.status_code != 200:
                     result["errors"].append(f"PDB-REDO structure not found: {pdb_id} (HTTP {r.status_code})")
-                    result["errors"].append(f"Hint: Not all PDB entries have PDB-REDO versions. Try source='pdb' instead.")
+                    result["errors"].append("Hint: Not all PDB entries have PDB-REDO versions. Try source='pdb' instead.")
                     return result
                 content = r.content
 
@@ -769,8 +767,8 @@ async def fetch_molecules(pdb_id: str, source: str = "pdb", prefer_format: str =
                 r = await client.get(url)
                 if r.status_code != 200:
                     result["errors"].append(f"OPM structure not found: {pdb_id} (HTTP {r.status_code})")
-                    result["errors"].append(f"Hint: Not all membrane proteins are in OPM. Check https://opm.phar.umich.edu/")
-                    result["errors"].append(f"Hint: For non-membrane proteins, use source='pdb' instead.")
+                    result["errors"].append("Hint: Not all membrane proteins are in OPM. Check https://opm.phar.umich.edu/")
+                    result["errors"].append("Hint: For non-membrane proteins, use source='pdb' instead.")
                     return result
                 content = r.content
 
@@ -1298,14 +1296,13 @@ def split_molecules(
     structure_path = Path(structure_file)
     suffix = structure_path.suffix.lower()
     
-    # Setup output directory
+    # Setup output directory with human-readable name
     if output_dir is None:
-        out_dir = WORKING_DIR / job_id
+        out_dir = create_unique_subdir(WORKING_DIR, "split")
     else:
-        out_dir = Path(output_dir) / job_id
-    ensure_directory(out_dir)
+        out_dir = create_unique_subdir(output_dir, "split")
     result["output_dir"] = str(out_dir)
-    
+
     try:
         # Read structure with gemmi
         logger.info(f"Reading structure with gemmi ({suffix})...")
@@ -2745,15 +2742,14 @@ def merge_structures(
         result["errors"].append(f"Files not found: {missing_files}")
         logger.error(f"Files not found: {missing_files}")
         return result
-    
-    # Setup output directory
+
+    # Setup output directory with human-readable name
     if output_dir is None:
-        out_dir = WORKING_DIR / job_id
+        out_dir = create_unique_subdir(WORKING_DIR, "merge")
     else:
-        out_dir = Path(output_dir) / job_id
-    ensure_directory(out_dir)
+        out_dir = create_unique_subdir(output_dir, "merge")
     result["output_dir"] = str(out_dir)
-    
+
     # Chain ID pool for renaming
     chain_id_pool = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + \
                     list("abcdefghijklmnopqrstuvwxyz") + \
@@ -2794,7 +2790,7 @@ def merge_structures(
                 # Assign new chain ID
                 if chain_id_index >= len(chain_id_pool):
                     result["errors"].append(f"Too many chains (>{len(chain_id_pool)})")
-                    logger.error(f"Exceeded maximum chain count")
+                    logger.error("Exceeded maximum chain count")
                     return result
                 
                 new_chain_id = chain_id_pool[chain_id_index]
@@ -2967,15 +2963,14 @@ def prepare_complex(
         result["errors"].append(f"Structure file not found: {structure_file}")
         logger.error(f"Structure file not found: {structure_file}")
         return result
-    
-    # Setup output directory
+
+    # Setup output directory with human-readable name
     if output_dir is None:
-        out_dir = WORKING_DIR / job_id
+        out_dir = create_unique_subdir(WORKING_DIR, "prepare_complex")
     else:
-        out_dir = Path(output_dir) / job_id
-    ensure_directory(out_dir)
+        out_dir = create_unique_subdir(output_dir, "prepare_complex")
     result["output_dir"] = str(out_dir)
-    
+
     try:
         # Step 1: Inspect structure
         logger.info("Step 1: Inspecting structure...")

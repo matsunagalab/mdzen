@@ -18,7 +18,7 @@ import numpy as np
 from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory
+from common.utils import setup_logger, ensure_directory, create_unique_subdir
 
 
 def generate_job_id() -> str:
@@ -107,12 +107,11 @@ def run_md_simulation(
         "warnings": []
     }
 
-    # Setup output directory
+    # Setup output directory with human-readable name
     if output_dir is None:
-        out_dir = WORKING_DIR / job_id
+        out_dir = create_unique_subdir(WORKING_DIR, "md_simulation")
     else:
-        out_dir = Path(output_dir) / job_id
-    ensure_directory(out_dir)
+        out_dir = create_unique_subdir(output_dir, "md_simulation")
     result["output_dir"] = str(out_dir)
 
     # Validate input files
@@ -904,12 +903,11 @@ def compute_q_value(
         "warnings": []
     }
 
-    # Setup output directory
+    # Setup output directory with human-readable name
     if output_dir is None:
-        out_dir = WORKING_DIR / job_id
+        out_dir = create_unique_subdir(WORKING_DIR, "q_value")
     else:
-        out_dir = Path(output_dir) / job_id
-    ensure_directory(out_dir)
+        out_dir = create_unique_subdir(output_dir, "q_value")
     result["output_dir"] = str(out_dir)
 
     # Validate input files

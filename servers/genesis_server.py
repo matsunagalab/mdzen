@@ -18,7 +18,7 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import pubchempy as pcp
 import yaml
@@ -27,7 +27,7 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory
+from common.utils import setup_logger, ensure_directory, create_unique_subdir
 from common.base import BaseToolWrapper
 
 
@@ -59,7 +59,8 @@ boltz_wrapper = BaseToolWrapper("boltz", conda_env=CORRECT_CONDA_ENV)
 def boltz2_protein_from_seq(
     amino_acid_sequence_list: list[str],
     smiles_list: list[str],
-    affinity: bool = False
+    affinity: bool = False,
+    output_dir: Optional[str] = None
 ) -> dict:
     """Predict protein structures for one or more amino acid sequences using Boltz-2.
 
@@ -77,6 +78,9 @@ def boltz2_protein_from_seq(
                      Use empty list [] if no ligands are needed.
         affinity: Set to True to predict binding affinity for the first ligand.
                   Default is False.
+        output_dir: Output directory. If None, creates output/boltz/.
+                    When provided (e.g., session directory), creates a "boltz"
+                    subdirectory within it.
 
     Returns:
         Dict with:
@@ -96,7 +100,8 @@ def boltz2_protein_from_seq(
         >>> result = boltz2_protein_from_seq(
         ...     amino_acid_sequence_list=["MVLSPADKTNVKAAW..."],
         ...     smiles_list=["CCO"],
-        ...     affinity=True
+        ...     affinity=True,
+        ...     output_dir="/output/session_abc123"
         ... )
     """
     logger.info(f"Starting Boltz-2 job for {len(amino_acid_sequence_list)} sequences")
@@ -104,13 +109,17 @@ def boltz2_protein_from_seq(
     # Initialize result structure
     job_id = generate_job_id()
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_dir = WORKING_DIR / f"boltz_{job_id}"
-    ensure_directory(output_dir)
+
+    # Setup output directory with human-readable name
+    if output_dir is None:
+        out_dir = create_unique_subdir(WORKING_DIR, "boltz")
+    else:
+        out_dir = create_unique_subdir(output_dir, "boltz")
 
     result = {
         "success": False,
         "job_id": job_id,
-        "output_dir": str(output_dir),
+        "output_dir": str(out_dir),
         "input_yaml_path": None,
         "predicted_pdb_files": [],
         "affinity_scores": None,
@@ -125,7 +134,7 @@ def boltz2_protein_from_seq(
 
     # Create YAML input for Boltz-2
     yaml_filename = f"{timestamp}.yaml"
-    yaml_path = output_dir / yaml_filename
+    yaml_path = out_dir / yaml_filename
     result["input_yaml_path"] = str(yaml_path)
 
     # Build chain IDs (A-Z, a-z, 0-9)
@@ -212,7 +221,7 @@ def boltz2_protein_from_seq(
 
         subprocess.run(
             boltz_command,
-            cwd=output_dir,
+            cwd=out_dir,
             env=run_env,
             capture_output=True,
             text=True,
@@ -232,7 +241,7 @@ def boltz2_protein_from_seq(
         return result
 
     # Parse results
-    result_dir = output_dir / f"boltz_results_{timestamp}"
+    result_dir = out_dir / f"boltz_results_{timestamp}"
     parsed_results = _parse_boltz_results(result_dir)
 
     result["predicted_pdb_files"] = parsed_results["structures"]

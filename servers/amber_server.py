@@ -10,7 +10,6 @@ Uses tleap from AmberTools for robust system building.
 """
 
 import json
-import logging
 import os
 import re
 import sys
@@ -21,7 +20,7 @@ from typing import List, Optional, Dict, Any
 from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory
+from common.utils import setup_logger, ensure_directory, create_unique_subdir
 from common.base import BaseToolWrapper
 
 
@@ -383,12 +382,11 @@ def build_amber_system(
                 result["warnings"].append(err)
             logger.warning(f"Ligand validation warnings: {ligand_errors}")
     
-    # Setup output directory
+    # Setup output directory with human-readable name
     if output_dir is None:
-        out_dir = WORKING_DIR / job_id
+        out_dir = create_unique_subdir(WORKING_DIR, "amber")
     else:
-        out_dir = Path(output_dir).resolve() / job_id
-    ensure_directory(out_dir)
+        out_dir = create_unique_subdir(output_dir, "amber")
     result["output_dir"] = str(out_dir)
     
     # Output files
@@ -413,7 +411,7 @@ def build_amber_system(
     try:
         # Build tleap script
         script_lines = []
-        script_lines.append(f"# Amber Server - tleap script")
+        script_lines.append("# Amber Server - tleap script")
         script_lines.append(f"# Job ID: {job_id}")
         script_lines.append(f"# Solvent type: {result['solvent_type']}")
         script_lines.append("")
@@ -514,7 +512,7 @@ def build_amber_system(
             if log_stats.get("warnings"):
                 result["warnings"].extend(log_stats["warnings"][:10])  # Limit warnings
             
-            logger.info(f"Successfully created Amber files:")
+            logger.info("Successfully created Amber files:")
             logger.info(f"  Topology: {parm7_file}")
             logger.info(f"  Coordinates: {rst7_file}")
             if result["statistics"]["num_atoms"]:

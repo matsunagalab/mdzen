@@ -190,9 +190,12 @@ setup_agent_prompt = """You are an MD Setup Agent conducting setup for molecular
 Today's date is {date}.
 
 <Workflow_Progress>
-CURRENT STEP: {step_index} of {total_steps} - {current_step}
-NEXT TOOL TO CALL: {next_tool}
-INPUT REQUIREMENTS: {input_requirements}
+PROGRESS: Step {step_index} of {total_steps}
+COMPLETED: {completed_steps_display}
+CURRENT: {current_step}
+NEXT TOOL: {next_tool}
+INPUTS NEEDED: {input_requirements}
+RECENT RESULT: {last_result_summary}
 </Workflow_Progress>
 
 <Available_Tools>

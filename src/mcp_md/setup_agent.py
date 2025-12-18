@@ -131,6 +131,22 @@ async def llm_call(state: SetupAgentState) -> dict:
     completed_steps = state.get("completed_steps", [])
     step_info = get_current_step_info(completed_steps)
 
+    # Format completed steps for display (e.g., "prepare_complex → solvate")
+    completed_display = " → ".join(completed_steps) if completed_steps else "(none yet)"
+
+    # Generate last result summary from decision_log
+    last_result_summary = "(first step)"
+    decision_log = state.get("decision_log", [])
+    if decision_log:
+        last_entry = decision_log[-1]
+        last_result = last_entry.get("result", {})
+        status = "✓" if last_result.get("success", False) else "✗"
+        tool_name = last_entry.get("tool", "unknown")
+        action_msg = last_result.get("action_message", "")
+        last_result_summary = f"{status} {tool_name}"
+        if action_msg:
+            last_result_summary += f" - {action_msg}"
+
     # Format prompt with current state AND step guidance
     session_dir = state.get("session_dir", "")
     prompt = setup_agent_prompt.format(
@@ -138,6 +154,8 @@ async def llm_call(state: SetupAgentState) -> dict:
         session_dir=session_dir,
         simulation_brief=json.dumps(state.get("simulation_brief", {}), indent=2),
         completed_steps=completed_steps,
+        completed_steps_display=completed_display,
+        last_result_summary=last_result_summary,
         outputs=json.dumps(state.get("outputs", {}), indent=2),
         current_step=step_info["current_step"],
         next_tool=step_info["next_tool"] or "NONE - workflow complete",

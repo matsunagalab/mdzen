@@ -1,4 +1,4 @@
-"""Session management for MCP-MD ADK.
+"""Session management for MDZen.
 
 This module provides session service configuration and state initialization
 for ADK-based workflows.
@@ -11,7 +11,7 @@ from typing import Optional
 
 from google.adk.sessions import InMemorySessionService, DatabaseSessionService
 
-from mcp_md_adk.config import get_output_dir
+from mdzen.config import get_output_dir
 
 
 def create_session_service(

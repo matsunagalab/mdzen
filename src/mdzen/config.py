@@ -1,10 +1,10 @@
-"""Configuration settings for MCP-MD ADK.
+"""Configuration settings for MDZen.
 
 This module centralizes all configuration settings for the ADK implementation.
-Settings are loaded from environment variables with MCPMD_ prefix.
+Settings are loaded from environment variables with MDZEN_ prefix.
 
 Usage:
-    from mcp_md_adk.config import settings, get_litellm_model
+    from mdzen.config import settings, get_litellm_model
 
     # Access settings
     model = get_litellm_model("clarification")
@@ -17,9 +17,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings loaded from environment variables.
 
-    All settings use the MCPMD_ prefix. For example:
-        MCPMD_OUTPUT_DIR=/path/to/output
-        MCPMD_SETUP_MODEL=anthropic:claude-sonnet-4-20250514
+    All settings use the MDZEN_ prefix. For example:
+        MDZEN_OUTPUT_DIR=/path/to/output
+        MDZEN_SETUP_MODEL=anthropic:claude-sonnet-4-20250514
     """
 
     # Output directory
@@ -47,10 +47,10 @@ class Settings(BaseSettings):
     md_simulation_server_path: str = "servers/md_simulation_server.py"
 
     class Config:
-        env_prefix = "MCPMD_"
+        env_prefix = "MDZEN_"
         env_file = ".env"
         env_file_encoding = "utf-8"
-        extra = "ignore"  # Ignore non-MCPMD_ prefixed env vars
+        extra = "ignore"  # Ignore non-MDZEN_ prefixed env vars
 
 
 # Global settings instance
@@ -90,9 +90,9 @@ def get_server_path(server_name: str) -> str:
 
 
 def get_litellm_model(model_type: str) -> str:
-    """Convert mcp_md model string to LiteLLM format.
+    """Convert mdzen model string to LiteLLM format.
 
-    mcp_md uses "anthropic:claude-xxx" format
+    MDZen uses "anthropic:claude-xxx" format
     LiteLLM uses "anthropic/claude-xxx" format
 
     Args:

@@ -1,4 +1,4 @@
-"""Custom FunctionTools for MCP-MD ADK.
+"""Custom FunctionTools for MDZen.
 
 This module defines custom tools that wrap Python functions for use
 with ADK's LlmAgent.
@@ -8,8 +8,8 @@ from typing import Optional
 
 from google.adk.tools import ToolContext
 
-from mcp_md_adk.schemas import SimulationBrief
-from mcp_md_adk.utils import (
+from mdzen.schemas import SimulationBrief
+from mdzen.utils import (
     get_current_step_info,
     validate_step_prerequisites,
 )

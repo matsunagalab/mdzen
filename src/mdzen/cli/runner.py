@@ -1,4 +1,4 @@
-"""Shared runner logic for MCP-MD ADK CLI.
+"""Shared runner logic for MDZen CLI.
 
 Centralizes event processing, session management, and user interaction patterns.
 This module eliminates code duplication between batch and interactive modes.
@@ -12,7 +12,7 @@ from rich.console import Console
 
 
 # Constants
-APP_NAME = "mcp_md_adk"
+APP_NAME = "mdzen"
 DEFAULT_USER = "default"
 
 

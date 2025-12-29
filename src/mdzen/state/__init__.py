@@ -1,7 +1,7 @@
-"""ADK State and session management for MCP-MD workflow."""
+"""ADK State and session management for MDZen workflow."""
 
 try:
-    from mcp_md_adk.state.session_manager import (
+    from mdzen.state.session_manager import (
         create_session_service,
         initialize_session_state,
         get_session_state,

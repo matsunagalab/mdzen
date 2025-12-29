@@ -1,4 +1,4 @@
-"""Phase 1: Clarification Agent for MCP-MD ADK.
+"""Phase 1: Clarification Agent for MDZen.
 
 This agent handles user interaction to gather MD simulation requirements
 and generates a structured SimulationBrief.
@@ -9,10 +9,10 @@ from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.mcp_tool import McpToolset
 
-from mcp_md_adk.config import get_litellm_model
-from mcp_md_adk.prompts import get_clarification_instruction
-from mcp_md_adk.tools.mcp_setup import get_clarification_tools
-from mcp_md_adk.tools.custom_tools import generate_simulation_brief
+from mdzen.config import get_litellm_model
+from mdzen.prompts import get_clarification_instruction
+from mdzen.tools.mcp_setup import get_clarification_tools
+from mdzen.tools.custom_tools import generate_simulation_brief
 
 
 def create_clarification_agent() -> tuple[LlmAgent, list[McpToolset]]:

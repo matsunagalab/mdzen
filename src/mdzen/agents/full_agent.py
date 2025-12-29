@@ -1,4 +1,4 @@
-"""Full 3-Phase MD Setup Agent for MCP-MD ADK.
+"""Full 3-Phase MD Setup Agent for MDZen.
 
 This module integrates all three phases using ADK's SequentialAgent:
 - Phase 1: Clarification (requirements gathering)
@@ -9,9 +9,9 @@ This module integrates all three phases using ADK's SequentialAgent:
 from google.adk.agents import SequentialAgent
 from google.adk.tools.mcp_tool import McpToolset
 
-from mcp_md_adk.agents.clarification_agent import create_clarification_agent
-from mcp_md_adk.agents.setup_agent import create_setup_agent
-from mcp_md_adk.agents.validation_agent import create_validation_agent
+from mdzen.agents.clarification_agent import create_clarification_agent
+from mdzen.agents.setup_agent import create_setup_agent
+from mdzen.agents.validation_agent import create_validation_agent
 
 
 def create_full_agent() -> tuple[SequentialAgent, list[McpToolset]]:

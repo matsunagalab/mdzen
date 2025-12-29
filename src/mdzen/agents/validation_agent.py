@@ -1,4 +1,4 @@
-"""Phase 3: Validation Agent for MCP-MD ADK.
+"""Phase 3: Validation Agent for MDZen.
 
 This agent validates setup outputs and generates a comprehensive report.
 """
@@ -7,10 +7,10 @@ from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools.function_tool import FunctionTool
 
-from mcp_md_adk.config import get_litellm_model
-from mcp_md_adk.prompts import get_validation_instruction
-from mcp_md_adk.tools.custom_tools import run_validation
-from mcp_md_adk.tools.state_wrappers import create_validation_wrapper
+from mdzen.config import get_litellm_model
+from mdzen.prompts import get_validation_instruction
+from mdzen.tools.custom_tools import run_validation
+from mdzen.tools.state_wrappers import create_validation_wrapper
 
 
 def create_validation_agent() -> LlmAgent:

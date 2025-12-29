@@ -1,7 +1,8 @@
 """
-MCP-MD - Molecular Dynamics Input File Generation Agent
+MDZen - Molecular Dynamics Setup AI Agent
 
-Main entry point for the MCP-MD workflow system using Google ADK.
+Main entry point for the MDZen workflow system using Google ADK.
+MDZen = MD + 膳（お膳立て）/ 禅（シンプルさ）
 """
 
 # Load environment variables from .env file (must be before other imports)
@@ -14,7 +15,7 @@ from typing import Optional  # noqa: E402
 from rich.console import Console  # noqa: E402
 from rich.table import Table  # noqa: E402
 
-from mcp_md_adk.cli.runner import (  # noqa: E402
+from mdzen.cli.runner import (  # noqa: E402
     APP_NAME,
     DEFAULT_USER,
     generate_session_id,
@@ -25,7 +26,7 @@ from mcp_md_adk.cli.runner import (  # noqa: E402
     display_debug_state,
 )
 
-app = typer.Typer(help="MD Input File Generation Agent with Boltz-2, AmberTools, and OpenMM")
+app = typer.Typer(help="MDZen - AI Agent for Molecular Dynamics Setup")
 console = Console()
 
 
@@ -73,7 +74,7 @@ async def _run_async(
 ):
     """Async implementation of the run command."""
     try:
-        from mcp_md_adk.state.session_manager import create_session_service
+        from mdzen.state.session_manager import create_session_service
     except ImportError as e:
         console.print(f"[red]Import error: {e}[/red]")
         console.print("\nMake sure you have installed google-adk:")
@@ -91,7 +92,7 @@ async def _run_async(
         session_id = generate_session_id()
 
     console.print("=" * 60)
-    console.print("[bold cyan]MCP-MD (Google ADK)[/bold cyan]")
+    console.print("[bold cyan]MDZen (Google ADK)[/bold cyan]")
     console.print(f"Session ID: {session_id}")
     console.print(f"Mode: {'Batch' if batch else 'Interactive'}")
     console.print("=" * 60)
@@ -115,9 +116,9 @@ async def _run_async(
 async def _run_batch(session_service, session_id: str, request: str):
     """Run in batch mode (no interrupts)."""
     from google.adk.runners import Runner
-    from mcp_md_adk.agents.full_agent import create_full_agent
-    from mcp_md_adk.tools.mcp_setup import close_toolsets
-    from mcp_md_adk.state.session_manager import (
+    from mdzen.agents.full_agent import create_full_agent
+    from mdzen.tools.mcp_setup import close_toolsets
+    from mdzen.state.session_manager import (
         initialize_session_state,
         get_session_state,
     )
@@ -180,16 +181,16 @@ async def _run_batch(session_service, session_id: str, request: str):
 async def _run_interactive(session_service, session_id: str, request: str):
     """Run in interactive mode with human-in-the-loop."""
     from google.adk.runners import Runner
-    from mcp_md_adk.agents.full_agent import (
+    from mdzen.agents.full_agent import (
         create_clarification_only_agent,
         create_setup_validation_agent,
     )
-    from mcp_md_adk.tools.mcp_setup import close_toolsets
-    from mcp_md_adk.state.session_manager import (
+    from mdzen.tools.mcp_setup import close_toolsets
+    from mdzen.state.session_manager import (
         initialize_session_state,
         get_session_state,
     )
-    from mcp_md_adk.utils import suppress_adk_unknown_agent_warnings
+    from mdzen.utils import suppress_adk_unknown_agent_warnings
     from prompt_toolkit import PromptSession
 
     # Track all toolsets for cleanup
@@ -370,7 +371,7 @@ def list_servers():
 @app.command()
 def info():
     """Show system information."""
-    console.print("[bold]MCP-MD: Molecular Dynamics Input File Generation Agent[/bold]")
+    console.print("[bold]MDZen: AI Agent for Molecular Dynamics Setup[/bold]")
     console.print()
     console.print("Powered by [cyan]Google Agent Development Kit (ADK)[/cyan]")
     console.print()

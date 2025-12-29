@@ -1,4 +1,4 @@
-"""MCP Toolset configuration for MCP-MD ADK.
+"""MCP Toolset configuration for MDZen.
 
 This module configures McpToolset instances for all 5 MCP servers
 using ADK's native MCP integration.
@@ -11,7 +11,7 @@ from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 from mcp import StdioServerParameters
 
-from mcp_md_adk.config import get_server_path, get_timeout
+from mdzen.config import get_server_path, get_timeout
 
 
 # Step-specific server mapping (Best Practice #3: Avoid Overloading Agents)

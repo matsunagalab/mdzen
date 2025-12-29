@@ -1,4 +1,4 @@
-"""Phase 2: Setup Agent for MCP-MD ADK.
+"""Phase 2: Setup Agent for MDZen.
 
 This agent executes the 4-step MD setup workflow:
 1. prepare_complex - Structure preparation and ligand parameterization
@@ -12,11 +12,11 @@ from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.mcp_tool import McpToolset
 
-from mcp_md_adk.config import get_litellm_model
-from mcp_md_adk.prompts import get_setup_instruction, get_step_instruction
-from mcp_md_adk.tools.mcp_setup import get_setup_tools, get_step_tools
-from mcp_md_adk.tools.custom_tools import get_workflow_status
-from mcp_md_adk.tools.state_wrappers import create_workflow_status_wrapper
+from mdzen.config import get_litellm_model
+from mdzen.prompts import get_setup_instruction, get_step_instruction
+from mdzen.tools.mcp_setup import get_setup_tools, get_step_tools
+from mdzen.tools.custom_tools import get_workflow_status
+from mdzen.tools.state_wrappers import create_workflow_status_wrapper
 
 
 def create_setup_agent() -> tuple[LlmAgent, list[McpToolset]]:
@@ -95,7 +95,7 @@ def update_state_after_tool(tool_name: str, result: dict, ctx) -> None:
         result: Tool result dictionary
         ctx: Invocation context with session access
     """
-    from mcp_md_adk.utils import (
+    from mdzen.utils import (
         canonical_tool_name,
         extract_output_paths,
         add_error_recovery_hints,
@@ -124,7 +124,7 @@ def update_state_after_tool(tool_name: str, result: dict, ctx) -> None:
 
     # Log decision
     from datetime import datetime
-    from mcp_md_adk.utils import compress_tool_result
+    from mdzen.utils import compress_tool_result
 
     decision_log = state.get("decision_log", [])
     decision_log.append({

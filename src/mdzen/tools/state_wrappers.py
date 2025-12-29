@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 from google.adk.tools import ToolContext
 
-from mcp_md_adk.utils import safe_dict, safe_list
+from mdzen.utils import safe_dict, safe_list
 
 
 def with_state_extraction(

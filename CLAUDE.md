@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**MCP-MD** is an AI-powered system for generating molecular dynamics (MD) input files optimized for the Amber/OpenMM ecosystem. It combines:
+**MDZen** (MD + 膳/禅) is an AI-powered system for generating molecular dynamics (MD) input files optimized for the Amber/OpenMM ecosystem. It combines:
 - **Google Agent Development Kit (ADK)** for multi-phase workflow orchestration
 - **FastMCP** server integration for specialized MD tools
 - **Boltz-2** for AI-driven structure prediction
@@ -17,14 +17,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Create conda environment with scientific packages
-conda create -n mcp-md python=3.11
-conda activate mcp-md
+conda create -n mdzen python=3.11
+conda activate mdzen
 conda install -c conda-forge openmm rdkit mdanalysis biopython pandas numpy scipy openblas pdbfixer
 conda install -c conda-forge ambertools packmol smina
 
 # Install project in editable mode
-git clone https://github.com/matsunagalab/mcp-md.git
-cd mcp-md
+git clone https://github.com/matsunagalab/mdzen.git
+cd mdzen
 pip install -e .
 
 # Optional: Boltz-2 (for Phase 2-3)
@@ -63,8 +63,8 @@ mcp dev servers/amber_server.py
 mcp dev servers/md_simulation_server.py
 
 # Code quality checks
-ruff check src/mcp_md_adk/       # Format checking
-ruff check src/mcp_md_adk/ --fix # Auto-fix format issues
+ruff check src/mdzen/       # Format checking
+ruff check src/mdzen/ --fix # Auto-fix format issues
 pytest tests/                     # Run tests
 ```
 
@@ -78,17 +78,17 @@ The system follows a **3-phase workflow pattern** using Google ADK's SequentialA
    - Pattern: **LlmAgent** with MCP tools
    - Tools: `fetch_molecules`, `inspect_molecules` (structure inspection before asking questions)
    - Outputs: Structured `SimulationBrief` via `generate_simulation_brief` FunctionTool
-   - Implementation: `src/mcp_md_adk/agents/clarification_agent.py`
+   - Implementation: `src/mdzen/agents/clarification_agent.py`
 
 2. **Phase 2: Setup**
    - Pattern: **LlmAgent** with all MCP tools
    - Fixed workflow: prepare_complex → solvate → build_topology → run_simulation
    - Tracks progress via `session.state["completed_steps"]`
-   - Implementation: `src/mcp_md_adk/agents/setup_agent.py`
+   - Implementation: `src/mdzen/agents/setup_agent.py`
 
 3. **Phase 3: Validation**
    - QC checks, format validation, report generation
-   - Implementation: `src/mcp_md_adk/agents/validation_agent.py`
+   - Implementation: `src/mdzen/agents/validation_agent.py`
 
 ### SequentialAgent Orchestration
 
@@ -119,10 +119,10 @@ session.state["validation_result"]  # Phase 3 output
 ### Directory Structure
 
 ```
-mcp-md/
+mdzen/
 ├── main.py                # CLI entry point (Typer)
 │
-├── src/mcp_md_adk/        # Google ADK implementation
+├── src/mdzen/        # Google ADK implementation
 │   ├── agents/
 │   │   ├── clarification_agent.py  # Phase 1 LlmAgent
 │   │   ├── setup_agent.py          # Phase 2 LlmAgent + create_step_agent()
@@ -229,7 +229,7 @@ from google.adk.runners import Runner
 from google.genai import types
 
 runner = Runner(
-    app_name="mcp_md_adk",
+    app_name="mdzen",
     agent=agent,
     session_service=session_service,
 )
@@ -289,7 +289,7 @@ STEP_TO_TOOL = {
 ADK serializes state values as JSON strings. Use safe helpers:
 
 ```python
-from mcp_md_adk.utils import safe_dict, safe_list
+from mdzen.utils import safe_dict, safe_list
 
 # Handles both dict and JSON string inputs
 outputs = safe_dict(session.state.get("outputs", {}))
@@ -303,8 +303,8 @@ completed = safe_list(session.state.get("completed_steps", []))
 ```python
 from common.base import get_default_timeout, get_solvation_timeout
 
-tleap_timeout = get_default_timeout()        # MCPMD_DEFAULT_TIMEOUT (300s)
-solvation_timeout = get_solvation_timeout()  # MCPMD_SOLVATION_TIMEOUT (600s)
+tleap_timeout = get_default_timeout()        # MDZEN_DEFAULT_TIMEOUT (300s)
+solvation_timeout = get_solvation_timeout()  # MDZEN_SOLVATION_TIMEOUT (600s)
 ```
 
 ### Step-Specific Tool Loading (Best Practice #3)
@@ -312,7 +312,7 @@ solvation_timeout = get_solvation_timeout()  # MCPMD_SOLVATION_TIMEOUT (600s)
 Phase 2 implements the "Avoid Overloading Agents" principle from Bandara et al. (2025):
 
 ```python
-from mcp_md_adk.tools.mcp_setup import STEP_SERVERS, get_step_tools
+from mdzen.tools.mcp_setup import STEP_SERVERS, get_step_tools
 
 # Each step loads only the required MCP servers
 STEP_SERVERS = {
@@ -334,7 +334,7 @@ toolsets = get_step_tools("solvate")  # Returns only solvation_server toolset
 **Step-Specific Agent Creation:**
 
 ```python
-from mcp_md_adk.agents.setup_agent import create_step_agent
+from mdzen.agents.setup_agent import create_step_agent
 
 # Create an agent for a specific step
 agent, toolsets = create_step_agent("prepare_complex")
@@ -343,7 +343,7 @@ agent, toolsets = create_step_agent("prepare_complex")
 
 ### Prompt Management
 
-Prompts are stored as **external Markdown files** in `src/mcp_md_adk/prompts/`:
+Prompts are stored as **external Markdown files** in `src/mdzen/prompts/`:
 
 ```
 prompts/
@@ -365,17 +365,17 @@ prompts/
 **Usage:**
 
 ```python
-from mcp_md_adk.prompts import get_clarification_instruction, get_setup_instruction
+from mdzen.prompts import get_clarification_instruction, get_setup_instruction
 
 # Load and format prompt with today's date
 instruction = get_clarification_instruction()
 
 # Or get raw template
-from mcp_md_adk.prompts import get_raw_prompt
+from mdzen.prompts import get_raw_prompt
 template = get_raw_prompt("setup")  # Returns contents of setup.md
 
 # Step-specific prompts (for Best Practice #3)
-from mcp_md_adk.prompts import get_step_instruction
+from mdzen.prompts import get_step_instruction
 step_prompt = get_step_instruction("prepare_complex")  # Falls back to setup.md if not found
 ```
 
@@ -394,8 +394,8 @@ step_prompt = get_step_instruction("prepare_complex")  # Falls back to setup.md 
 
 ### Quality Checklist
 
-After editing Python files in `src/mcp_md_adk/`:
-1. Run `ruff check src/mcp_md_adk/`
+After editing Python files in `src/mdzen/`:
+1. Run `ruff check src/mdzen/`
 2. Fix any linting errors directly in the Python file
 3. Test with CLI: `python main.py run "Setup MD for PDB 1AKE"`
 4. Verify imports work correctly
@@ -404,17 +404,17 @@ After editing Python files in `src/mcp_md_adk/`:
 
 ### Environment Variables
 
-All settings can be configured via `MCPMD_` prefixed environment variables:
+All settings can be configured via `MDZEN_` prefixed environment variables:
 
 ```bash
 # .env or shell exports
-export MCPMD_OUTPUT_DIR="./output"
-export MCPMD_CLARIFICATION_MODEL="anthropic:claude-haiku-4-5-20251001"
-export MCPMD_SETUP_MODEL="anthropic:claude-sonnet-4-20250514"
-export MCPMD_DEFAULT_TIMEOUT=300
-export MCPMD_SOLVATION_TIMEOUT=600
-export MCPMD_MEMBRANE_TIMEOUT=1800
-export MCPMD_MD_SIMULATION_TIMEOUT=3600
+export MDZEN_OUTPUT_DIR="./output"
+export MDZEN_CLARIFICATION_MODEL="anthropic:claude-haiku-4-5-20251001"
+export MDZEN_SETUP_MODEL="anthropic:claude-sonnet-4-20250514"
+export MDZEN_DEFAULT_TIMEOUT=300
+export MDZEN_SOLVATION_TIMEOUT=600
+export MDZEN_MEMBRANE_TIMEOUT=1800
+export MDZEN_MD_SIMULATION_TIMEOUT=3600
 ```
 
 Note: Model format uses `anthropic:model-name` which is automatically converted to LiteLLM format (`anthropic/model-name`).

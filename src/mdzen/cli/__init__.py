@@ -1,6 +1,6 @@
-"""ADK CLI utilities for MCP-MD workflow."""
+"""ADK CLI utilities for MDZen workflow."""
 
-from mcp_md_adk.cli.runner import (
+from mdzen.cli.runner import (
     APP_NAME,
     DEFAULT_USER,
     generate_session_id,

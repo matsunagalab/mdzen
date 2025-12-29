@@ -1,4 +1,4 @@
-"""Prompt loader for MCP-MD ADK agents.
+"""Prompt loader for MDZen agents.
 
 Prompts are stored as separate .md files in the prompts/ directory.
 This allows non-engineers to edit prompts without touching Python code.
@@ -18,7 +18,7 @@ Directory structure:
 from functools import lru_cache
 from pathlib import Path
 
-from mcp_md_adk.utils import get_today_str
+from mdzen.utils import get_today_str
 
 # Prompts directory location
 PROMPTS_DIR = Path(__file__).parent / "prompts"

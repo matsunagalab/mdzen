@@ -1,4 +1,6 @@
-# MCP-MD: Molecular Dynamics Input File Generation Agent
+# MDZen: AI Agent for Molecular Dynamics Setup
+
+MDZen = MD + 膳（お膳立て）/ 禅（シンプルさ）
 
 An AI agent system specialized for Amber-based MD input file generation. Built with **Google Agent Development Kit (ADK)** + **FastMCP** using a 3-phase workflow (Clarification → Setup → Validation).
 
@@ -38,8 +40,8 @@ An AI agent system specialized for Amber-based MD input file generation. Built w
 
 ```bash
 # Create conda environment
-conda create -n mcp-md python=3.11
-conda activate mcp-md
+conda create -n mdzen python=3.11
+conda activate mdzen
 
 # Install scientific computing packages
 conda install -c conda-forge openmm rdkit mdanalysis biopython pandas numpy scipy openblas pdbfixer
@@ -52,8 +54,8 @@ conda install -c conda-forge ambertools packmol smina
 
 ```bash
 # Clone the project
-git clone https://github.com/matsunagalab/mcp-md.git
-cd mcp-md
+git clone https://github.com/matsunagalab/mdzen.git
+cd mdzen
 
 # Install package (editable mode)
 pip install -e .
@@ -135,10 +137,10 @@ mcp dev servers/md_simulation_server.py
 ## Directory Structure
 
 ```
-mcp-md/
+mdzen/
 ├── main.py               # CLI entry point
 │
-├── src/mcp_md_adk/       # Google ADK implementation
+├── src/mdzen/            # Google ADK implementation
 │   ├── agents/
 │   │   ├── clarification_agent.py  # Phase 1: LlmAgent
 │   │   ├── setup_agent.py          # Phase 2: LlmAgent + step agents
@@ -191,9 +193,9 @@ mcp-md/
 This project adopts the **Direct Python Files** pattern:
 
 ```
-✅ Edit src/mcp_md_adk/ directly
+✅ Edit src/mdzen/ directly
 ✅ Test and demo in notebooks/
-✅ Format check with ruff check src/mcp_md_adk/
+✅ Format check with ruff check src/mdzen/
 
 🚫 Code generation via %%writefile is not recommended
 ```
@@ -202,10 +204,10 @@ This project adopts the **Direct Python Files** pattern:
 
 ```bash
 # Format check
-ruff check src/mcp_md_adk/
+ruff check src/mdzen/
 
 # Auto-fix
-ruff check src/mcp_md_adk/ --fix
+ruff check src/mdzen/ --fix
 ```
 
 ### Test Execution
@@ -218,37 +220,37 @@ pytest tests/ -v
 pytest tests/test_structure_server.py -v
 
 # Run with coverage
-pytest tests/ --cov=src/mcp_md_adk --cov-report=html
+pytest tests/ --cov=src/mdzen --cov-report=html
 
 # Quick import test
-python -c "from mcp_md_adk.config import settings; print('OK')"
+python -c "from mdzen.config import settings; print('OK')"
 ```
 
 ## Configuration (Environment Variables)
 
-Settings can be customized via `MCPMD_` prefixed environment variables:
+Settings can be customized via `MDZEN_` prefixed environment variables:
 
 ```bash
 # Set via .env file or environment variables
-export MCPMD_OUTPUT_DIR="./custom_output"
-export MCPMD_CLARIFICATION_MODEL="anthropic:claude-haiku-4-5-20251001"
-export MCPMD_SETUP_MODEL="anthropic:claude-sonnet-4-20250514"
-export MCPMD_DEFAULT_TIMEOUT=300
+export MDZEN_OUTPUT_DIR="./custom_output"
+export MDZEN_CLARIFICATION_MODEL="anthropic:claude-haiku-4-5-20251001"
+export MDZEN_SETUP_MODEL="anthropic:claude-sonnet-4-20250514"
+export MDZEN_DEFAULT_TIMEOUT=300
 ```
 
 Available settings:
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `MCPMD_OUTPUT_DIR` | `./outputs` | Output directory |
-| `MCPMD_CLARIFICATION_MODEL` | `anthropic:claude-haiku-4-5-20251001` | Phase 1 model |
-| `MCPMD_SETUP_MODEL` | `anthropic:claude-sonnet-4-20250514` | Phase 2 model |
-| `MCPMD_COMPRESS_MODEL` | `anthropic:claude-haiku-4-5-20251001` | Compression model |
-| `MCPMD_DEFAULT_TIMEOUT` | `300` | Default timeout (seconds) |
-| `MCPMD_SOLVATION_TIMEOUT` | `600` | Solvation timeout (seconds) |
-| `MCPMD_MEMBRANE_TIMEOUT` | `1800` | Membrane building timeout (seconds) |
-| `MCPMD_MD_SIMULATION_TIMEOUT` | `3600` | MD execution timeout (seconds) |
-| `MCPMD_MAX_MESSAGE_HISTORY` | `6` | Number of message history to retain |
+| `MDZEN_OUTPUT_DIR` | `./outputs` | Output directory |
+| `MDZEN_CLARIFICATION_MODEL` | `anthropic:claude-haiku-4-5-20251001` | Phase 1 model |
+| `MDZEN_SETUP_MODEL` | `anthropic:claude-sonnet-4-20250514` | Phase 2 model |
+| `MDZEN_COMPRESS_MODEL` | `anthropic:claude-haiku-4-5-20251001` | Compression model |
+| `MDZEN_DEFAULT_TIMEOUT` | `300` | Default timeout (seconds) |
+| `MDZEN_SOLVATION_TIMEOUT` | `600` | Solvation timeout (seconds) |
+| `MDZEN_MEMBRANE_TIMEOUT` | `1800` | Membrane building timeout (seconds) |
+| `MDZEN_MD_SIMULATION_TIMEOUT` | `3600` | MD execution timeout (seconds) |
+| `MDZEN_MAX_MESSAGE_HISTORY` | `6` | Number of message history to retain |
 
 > **Note**: Model format uses `anthropic:model-name` which is automatically converted to LiteLLM format (`anthropic/model-name`).
 

@@ -42,7 +42,7 @@ logger = setup_logger(__name__)
 mcp = FastMCP("Genesis Server")
 
 # Initialize working directory (use absolute path for conda run compatibility)
-WORKING_DIR = Path("output").resolve()
+WORKING_DIR = Path("outputs").resolve()
 ensure_directory(WORKING_DIR)
 
 # Initialize Boltz-2 wrapper

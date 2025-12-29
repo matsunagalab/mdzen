@@ -41,7 +41,7 @@ logger = setup_logger(__name__)
 mcp = FastMCP("Structure Server")
 
 # Initialize working directory
-WORKING_DIR = Path("output")
+WORKING_DIR = Path("outputs")
 ensure_directory(WORKING_DIR)
 
 # Initialize tool wrappers

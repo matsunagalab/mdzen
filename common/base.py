@@ -251,10 +251,10 @@ class BaseToolWrapper:
                 try:
                     result = self.run([flag])
                     return result.stdout.strip()
-                except:
+                except Exception:
                     continue
-        except:
+        except Exception:
             pass
-        
+
         return None
 

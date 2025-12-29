@@ -1,11 +1,11 @@
 """
-Integration tests for MCP-MD workflow components.
+Integration tests for MDZen workflow components.
 
 Tests cover:
-- State definitions and reducers
-- Agent graph imports
-- MCP integration setup
-- Workflow step mappings
+- Agent imports and creation
+- MCP toolset configuration
+- Schema definitions
+- Session management
 
 NOTE: Full end-to-end integration tests require MCP servers running
 and are marked with @pytest.mark.slow
@@ -15,149 +15,222 @@ import pytest
 from pathlib import Path
 
 
-class TestStateDefinitions:
-    """Test state definitions and reducers."""
+class TestAgentImports:
+    """Test that agent modules can be imported correctly."""
 
-    def test_setup_state_imports(self):
-        """SetupAgentState and related classes can be imported."""
-        from mcp_md.state_setup import (
-            SetupAgentState,
-            SetupOutputState,
-            SETUP_STEPS,
-            merge_outputs,
-        )
+    def test_clarification_agent_import(self):
+        """Clarification agent can be imported."""
+        from mdzen.agents.clarification_agent import create_clarification_agent
 
-        # Verify SETUP_STEPS
-        assert len(SETUP_STEPS) == 4
-        assert "prepare_complex" in SETUP_STEPS
-        assert "solvate" in SETUP_STEPS
-        assert "build_topology" in SETUP_STEPS
-        assert "run_simulation" in SETUP_STEPS
+        # Verify function exists
+        assert callable(create_clarification_agent)
 
-    def test_merge_outputs_reducer(self):
-        """merge_outputs reducer merges dictionaries correctly."""
-        from mcp_md.state_setup import merge_outputs
+    def test_setup_agent_import(self):
+        """Setup agent can be imported."""
+        from mdzen.agents.setup_agent import create_setup_agent
 
-        # Both non-None
-        left = {"a": 1, "b": 2}
-        right = {"b": 3, "c": 4}
-        result = merge_outputs(left, right)
-        assert result == {"a": 1, "b": 3, "c": 4}
+        assert callable(create_setup_agent)
 
-        # Left is None
-        result = merge_outputs(None, {"x": 1})
-        assert result == {"x": 1}
+    def test_validation_agent_import(self):
+        """Validation agent can be imported."""
+        from mdzen.agents.validation_agent import create_validation_agent
 
-        # Right is None
-        result = merge_outputs({"y": 2}, None)
-        assert result == {"y": 2}
+        assert callable(create_validation_agent)
 
-        # Both None
-        result = merge_outputs(None, None)
-        assert result == {}
+    def test_full_agent_import(self):
+        """Full agent (SequentialAgent) can be imported."""
+        from mdzen.agents.full_agent import create_full_agent
 
-    def test_scope_state_imports(self):
-        """AgentState and SimulationBrief can be imported."""
-        from mcp_md.state_scope import AgentState, AgentInputState, SimulationBrief
+        assert callable(create_full_agent)
 
-        # Verify SimulationBrief is a Pydantic model
+
+class TestSchemas:
+    """Test schema definitions."""
+
+    def test_simulation_brief_import(self):
+        """SimulationBrief can be imported and is a Pydantic model."""
+        from mdzen.schemas import SimulationBrief
+
+        # Verify it's a Pydantic model
         assert hasattr(SimulationBrief, "model_fields")
 
+    def test_simulation_brief_fields(self):
+        """SimulationBrief has expected fields."""
+        from mdzen.schemas import SimulationBrief
 
-class TestSetupAgentMappings:
-    """Test workflow step to tool mappings."""
-
-    def test_step_to_tool_mapping(self):
-        """STEP_TO_TOOL maps all setup steps to tools."""
-        from mcp_md.setup_agent import STEP_TO_TOOL, TOOL_TO_STEP
-        from mcp_md.state_setup import SETUP_STEPS
-
-        # All steps have tool mappings
-        for step in SETUP_STEPS:
-            assert step in STEP_TO_TOOL, f"Missing tool mapping for step: {step}"
-
-        # Reverse mapping covers all tools
-        for step, tool in STEP_TO_TOOL.items():
-            assert TOOL_TO_STEP[tool] == step
-
-    def test_get_current_step_info(self):
-        """get_current_step_info handles various states correctly."""
-        from mcp_md.setup_agent import get_current_step_info
-        from mcp_md.state_setup import SETUP_STEPS
-
-        # Empty completed steps
-        info = get_current_step_info([])
-        assert info["current_step"] == SETUP_STEPS[0]
-        assert info["step_index"] == 0
-
-        # Some steps completed
-        info = get_current_step_info(["prepare_complex", "solvate"])
-        assert info["current_step"] == "build_topology"
-        assert info["step_index"] == 2
-
-        # All steps completed
-        info = get_current_step_info(SETUP_STEPS.copy())
-        assert info["current_step"] == "complete"
-        assert info["next_tool"] is None
-
-        # Handles duplicates (from reducer accumulation)
-        info = get_current_step_info(["prepare_complex", "prepare_complex", "solvate"])
-        assert info["current_step"] == "build_topology"
+        fields = SimulationBrief.model_fields
+        # Check key fields exist
+        assert "pdb_id" in fields or "pdb_source" in fields
+        assert "temperature" in fields
+        assert "simulation_time_ns" in fields
 
 
-class TestUtilityFunctions:
-    """Test utility functions used across agents."""
+class TestMCPSetup:
+    """Test MCP toolset configuration."""
 
-    def test_canonical_tool_name(self):
-        """canonical_tool_name strips server prefix."""
-        from mcp_md.utils import canonical_tool_name
+    def test_create_mcp_toolsets(self):
+        """create_mcp_toolsets returns dict of toolsets."""
+        from mdzen.tools.mcp_setup import create_mcp_toolsets
 
-        assert canonical_tool_name("structure__prepare_complex") == "prepare_complex"
-        assert canonical_tool_name("prepare_complex") == "prepare_complex"
-        assert canonical_tool_name("solvation__solvate_structure") == "solvate_structure"
+        toolsets = create_mcp_toolsets()
+        assert isinstance(toolsets, dict)
+        assert "structure" in toolsets
+        assert "genesis" in toolsets
+        assert "solvation" in toolsets
+        assert "amber" in toolsets
+        assert "md_simulation" in toolsets
 
-    def test_compress_tool_result_infers_server(self):
-        """compress_tool_result infers server type from result keys."""
-        from mcp_md.utils import compress_tool_result
+    def test_step_servers_mapping(self):
+        """STEP_SERVERS maps steps to server names."""
+        from mdzen.tools.mcp_setup import STEP_SERVERS
 
-        # Structure result (has merged_pdb)
-        structure_result = {"success": True, "merged_pdb": "/path/file.pdb"}
-        compressed = compress_tool_result("unknown_tool", structure_result)
-        assert compressed["merged_pdb"] == "/path/file.pdb"
+        assert "prepare_complex" in STEP_SERVERS
+        assert "solvate" in STEP_SERVERS
+        assert "build_topology" in STEP_SERVERS
+        assert "run_simulation" in STEP_SERVERS
 
-        # Solvation result (has box_dimensions + output_file)
-        solvation_result = {
-            "success": True,
-            "output_file": "/path/solvated.pdb",
-            "box_dimensions": {"x": 80, "y": 80, "z": 80},
-        }
-        compressed = compress_tool_result("unknown_tool", solvation_result)
-        assert compressed["output_file"] == "/path/solvated.pdb"
-        assert compressed["box_dimensions"] == {"x": 80, "y": 80, "z": 80}
+    def test_get_clarification_tools(self):
+        """get_clarification_tools returns filtered toolset."""
+        from mdzen.tools.mcp_setup import get_clarification_tools
 
-        # Amber result (has parm7 + rst7)
-        amber_result = {"success": True, "parm7": "/path/sys.parm7", "rst7": "/path/sys.rst7"}
-        compressed = compress_tool_result("unknown_tool", amber_result)
-        assert compressed["parm7"] == "/path/sys.parm7"
-        assert compressed["rst7"] == "/path/sys.rst7"
+        tools = get_clarification_tools()
+        assert isinstance(tools, list)
+        assert len(tools) > 0
+
+    def test_get_setup_tools(self):
+        """get_setup_tools returns all toolsets."""
+        from mdzen.tools.mcp_setup import get_setup_tools
+
+        tools = get_setup_tools()
+        assert isinstance(tools, list)
+        assert len(tools) == 5  # All 5 servers
 
 
-class TestAgentGraphs:
-    """Test agent graph construction."""
+class TestConfig:
+    """Test configuration module."""
 
-    def test_setup_graph_can_be_created(self):
-        """setup agent graph can be created."""
-        from mcp_md.setup_agent import create_setup_graph
+    def test_settings_import(self):
+        """Settings can be imported."""
+        from mdzen.config import settings
 
-        graph = create_setup_graph()
-        assert graph is not None
+        assert settings is not None
 
-    def test_clarification_graph_can_be_created(self):
-        """clarification graph can be created."""
-        from mcp_md.clarification_agent import create_clarification_graph
+    def test_settings_has_model_configs(self):
+        """Settings has model configuration."""
+        from mdzen.config import settings
 
-        graph = create_clarification_graph()
-        assert graph is not None
+        assert hasattr(settings, "clarification_model")
+        assert hasattr(settings, "setup_model")
+
+    def test_settings_has_timeouts(self):
+        """Settings has timeout configurations."""
+        from mdzen.config import settings
+
+        assert hasattr(settings, "default_timeout")
+        assert hasattr(settings, "solvation_timeout")
+        assert settings.default_timeout > 0
+        assert settings.solvation_timeout > 0
+
+    def test_get_litellm_model(self):
+        """get_litellm_model converts model format."""
+        from mdzen.config import get_litellm_model
+
+        # Test conversion from anthropic:model to anthropic/model
+        result = get_litellm_model("anthropic:claude-sonnet-4-20250514")
+        assert result == "anthropic/claude-sonnet-4-20250514"
+
+        # Already correct format should pass through
+        result = get_litellm_model("anthropic/claude-sonnet-4-20250514")
+        assert result == "anthropic/claude-sonnet-4-20250514"
+
+
+class TestSessionManager:
+    """Test session management."""
+
+    def test_create_session_service(self):
+        """create_session_service returns SessionService."""
+        from mdzen.state.session_manager import create_session_service
+
+        service = create_session_service()
+        assert service is not None
+
+
+class TestCustomTools:
+    """Test custom FunctionTools."""
+
+    def test_generate_simulation_brief_import(self):
+        """generate_simulation_brief function can be imported."""
+        from mdzen.tools.custom_tools import generate_simulation_brief
+
+        assert callable(generate_simulation_brief)
+
+    def test_get_workflow_status_import(self):
+        """get_workflow_status function can be imported."""
+        from mdzen.tools.custom_tools import get_workflow_status
+
+        assert callable(get_workflow_status)
+
+    def test_run_validation_import(self):
+        """run_validation function can be imported."""
+        from mdzen.tools.custom_tools import run_validation
+
+        assert callable(run_validation)
+
+
+class TestPrompts:
+    """Test prompt loading."""
+
+    def test_get_clarification_instruction(self):
+        """Clarification prompt can be loaded."""
+        from mdzen.prompts import get_clarification_instruction
+
+        instruction = get_clarification_instruction()
+        assert isinstance(instruction, str)
+        assert len(instruction) > 0
+
+    def test_get_setup_instruction(self):
+        """Setup prompt can be loaded."""
+        from mdzen.prompts import get_setup_instruction
+
+        instruction = get_setup_instruction()
+        assert isinstance(instruction, str)
+        assert len(instruction) > 0
+
+    def test_get_validation_instruction(self):
+        """Validation prompt can be loaded."""
+        from mdzen.prompts import get_validation_instruction
+
+        instruction = get_validation_instruction()
+        assert isinstance(instruction, str)
+        assert len(instruction) > 0
+
+
+class TestCLI:
+    """Test CLI module imports."""
+
+    def test_runner_imports(self):
+        """Runner utilities can be imported."""
+        from mdzen.cli.runner import (
+            APP_NAME,
+            generate_session_id,
+            create_message,
+            extract_text_from_content,
+        )
+
+        assert APP_NAME == "mdzen"
+        assert callable(generate_session_id)
+        assert callable(create_message)
+        assert callable(extract_text_from_content)
+
+    def test_generate_session_id_format(self):
+        """Session ID has correct format."""
+        from mdzen.cli.runner import generate_session_id
+
+        session_id = generate_session_id()
+        assert session_id.startswith("md_session_")
+        # Format: md_session_YYYYMMDD_HHMMSS
+        parts = session_id.split("_")
+        assert len(parts) == 4
 
 
 @pytest.mark.slow

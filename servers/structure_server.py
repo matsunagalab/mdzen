@@ -1871,7 +1871,7 @@ def clean_protein(
             # Run pdb4amber with --reduce to ensure Amber-compatible hydrogen naming
             # --reduce uses Reduce to add/rename hydrogens with proper names (H1, H2, H3)
             # This fixes N-terminal hydrogen naming issues that would cause tleap errors
-            pdb4amber_result = pdb4amber_wrapper.run([
+            pdb4amber_wrapper.run([
                 "-i", str(output_file),
                 "-o", str(amber_output_file),
                 "--reduce",  # Use Reduce for proper Amber hydrogen naming
@@ -1990,7 +1990,7 @@ def estimate_net_charge(
     
     try:
         from rdkit import Chem
-        from rdkit.Chem import AllChem, Descriptors, rdMolDescriptors
+        from rdkit.Chem import rdMolDescriptors
     except ImportError:
         result["errors"].append("RDKit not installed. Install via conda.")
         logger.error("RDKit not installed")
@@ -2460,8 +2460,7 @@ def run_antechamber_robust(
     charges_to_try = [net_charge]
     if max_retries > 0:
         charges_to_try.extend([net_charge + 1, net_charge - 1])
-    
-    last_error = None
+
     sqm_diagnostics = None
     charge_used = None
     
@@ -2503,7 +2502,6 @@ def run_antechamber_robust(
                     
             except Exception as e:
                 error_str = str(e)
-                last_error = error_str
                 logger.warning(f"Antechamber failed with charge {try_charge}: {e}")
                 
                 # Check if it's a connectivity/multiple unit error
@@ -3193,7 +3191,7 @@ def prepare_complex(
         # Determine overall success
         # Success if at least one protein or ligand was processed successfully
         proteins_ok = any(p["success"] for p in result["proteins"]) if result["proteins"] else True
-        ligands_ok = any(l["success"] for l in result["ligands"]) if result["ligands"] else True
+        ligands_ok = any(lig["success"] for lig in result["ligands"]) if result["ligands"] else True
         
         if process_proteins and not result["proteins"]:
             proteins_ok = not split_result.get("protein_files")  # OK if no proteins to process
@@ -3260,7 +3258,7 @@ def prepare_complex(
         if result["success"]:
             logger.info(f"Complex preparation complete: {out_dir}")
             logger.info(f"  Proteins processed: {sum(1 for p in result['proteins'] if p['success'])}/{len(result['proteins'])}")
-            logger.info(f"  Ligands processed: {sum(1 for l in result['ligands'] if l['success'])}/{len(result['ligands'])}")
+            logger.info(f"  Ligands processed: {sum(1 for lig in result['ligands'] if lig['success'])}/{len(result['ligands'])}")
             if result.get("merged_pdb"):
                 logger.info(f"  Merged PDB: {result['merged_pdb']}")
         

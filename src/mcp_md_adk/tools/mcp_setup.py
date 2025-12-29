@@ -4,6 +4,7 @@ This module configures McpToolset instances for all 5 MCP servers
 using ADK's native MCP integration.
 """
 
+import io
 import sys
 from pathlib import Path
 
@@ -12,6 +13,24 @@ from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 from mcp import StdioServerParameters
 
 from mcp_md_adk.config import get_server_path, get_timeout
+
+
+class _NullWriter(io.IOBase):
+    """Null writer that discards all output.
+
+    Used to suppress MCP session cleanup warnings which are non-fatal
+    but occur due to anyio cancel scope limitations.
+    """
+
+    def write(self, s):
+        return len(s)
+
+    def flush(self):
+        pass
+
+
+# Singleton null writer for suppressing cleanup warnings
+_null_writer = _NullWriter()
 
 
 def get_project_root() -> Path:
@@ -71,7 +90,8 @@ def create_mcp_toolsets() -> dict[str, McpToolset]:
                     args=[server_path],
                 ),
                 timeout=timeout,
-            )
+            ),
+            errlog=_null_writer,  # Suppress cleanup warnings
         )
 
     return toolsets
@@ -104,6 +124,7 @@ def create_filtered_toolset(
             timeout=timeout,
         ),
         tool_filter=tool_filter,
+        errlog=_null_writer,  # Suppress cleanup warnings
     )
 
 

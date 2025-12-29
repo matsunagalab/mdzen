@@ -34,9 +34,10 @@ def create_session_service(
     Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
     # Create database session service
+    # Note: Use sqlite+aiosqlite for async compatibility
     db_path = Path(checkpoint_dir) / "adk_sessions.db"
     return DatabaseSessionService(
-        database_url=f"sqlite:///{db_path}"
+        db_url=f"sqlite+aiosqlite:///{db_path}"
     )
 
 

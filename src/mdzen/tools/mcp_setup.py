@@ -12,27 +12,25 @@ from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 from mcp import StdioServerParameters
 
 from mdzen.config import get_server_path, get_timeout
-
-
-# Step-specific server mapping (Best Practice #3: Avoid Overloading Agents)
-STEP_SERVERS: dict[str, list[str]] = {
-    "prepare_complex": ["structure", "genesis"],  # Structure prep + Boltz-2
-    "solvate": ["solvation"],                     # Solvation only
-    "build_topology": ["amber"],                  # Topology generation only
-    "run_simulation": ["md_simulation"],          # MD execution only
-}
+from mdzen.workflow import STEP_SERVERS
 
 
 def get_project_root() -> Path:
-    """Get the project root directory.
+    """Get the project root directory by looking for pyproject.toml.
 
     Returns:
-        Path to project root (where servers/ directory is located)
+        Path to project root (where pyproject.toml and servers/ are located)
+
+    Raises:
+        RuntimeError: If project root cannot be found
     """
-    # Navigate up from src/mcp_md_adk/tools/mcp_setup.py to project root
-    current = Path(__file__).resolve()
-    # Go up: tools -> mcp_md_adk -> src -> project_root
-    return current.parent.parent.parent.parent
+    current = Path(__file__).resolve().parent
+    for parent in [current] + list(current.parents):
+        if (parent / "pyproject.toml").exists():
+            return parent
+    raise RuntimeError(
+        "Could not find project root (no pyproject.toml found in parent directories)"
+    )
 
 
 def create_mcp_toolsets() -> dict[str, McpToolset]:

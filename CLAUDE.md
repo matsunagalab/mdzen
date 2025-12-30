@@ -125,7 +125,7 @@ mdzen/
 ├── src/mdzen/        # Google ADK implementation
 │   ├── agents/
 │   │   ├── clarification_agent.py  # Phase 1 LlmAgent
-│   │   ├── setup_agent.py          # Phase 2 LlmAgent + create_step_agent()
+│   │   ├── setup_agent.py          # Phase 2 LlmAgent
 │   │   ├── validation_agent.py     # Phase 3 LlmAgent
 │   │   └── full_agent.py           # SequentialAgent
 │   ├── cli/
@@ -142,11 +142,13 @@ mdzen/
 │   ├── state/
 │   │   └── session_manager.py      # SessionService setup
 │   ├── tools/
-│   │   ├── mcp_setup.py            # McpToolset factory + STEP_SERVERS
-│   │   └── custom_tools.py         # FunctionTools + progress tracking
+│   │   ├── mcp_setup.py            # McpToolset factory
+│   │   ├── custom_tools.py         # FunctionTools + progress tracking
+│   │   └── state_wrappers.py       # ToolContext state extraction
 │   ├── config.py                   # Settings + LiteLLM conversion
 │   ├── prompts.py                  # Prompt loader + get_step_instruction()
 │   ├── schemas.py                  # Pydantic models
+│   ├── workflow.py                 # Workflow step definitions (single source of truth)
 │   └── utils.py                    # Utilities
 │
 ├── servers/               # FastMCP servers (5 servers)
@@ -271,16 +273,24 @@ brief_tool = FunctionTool(generate_simulation_brief)
 
 ### Workflow Step Tracking (Phase 2)
 
-Phase 2 setup_agent uses explicit step tracking for reliable workflow execution:
+All workflow step definitions are centralized in `src/mdzen/workflow.py`:
 
 ```python
+from mdzen.workflow import SETUP_STEPS, STEP_CONFIG, STEP_TO_TOOL
+
+# Ordered list of workflow steps
 SETUP_STEPS = ["prepare_complex", "solvate", "build_topology", "run_simulation"]
 
-STEP_TO_TOOL = {
-    "prepare_complex": "prepare_complex",
-    "solvate": "solvate_structure",
-    "build_topology": "build_amber_system",
-    "run_simulation": "run_md_simulation",
+# Centralized configuration for each step
+STEP_CONFIG = {
+    "prepare_complex": {
+        "tool": "prepare_complex",
+        "inputs": "Requires: PDB ID or structure file",
+        "servers": ["structure", "genesis"],
+        "allowed_tools": ["prepare_complex", "fetch_molecules", "predict_structure"],
+        "estimate": "1-5 minutes",
+    },
+    # ... other steps
 }
 ```
 
@@ -307,20 +317,19 @@ tleap_timeout = get_default_timeout()        # MDZEN_DEFAULT_TIMEOUT (300s)
 solvation_timeout = get_solvation_timeout()  # MDZEN_SOLVATION_TIMEOUT (600s)
 ```
 
-### Step-Specific Tool Loading (Best Practice #3)
+### Step-Specific Tool Loading
 
-Phase 2 implements the "Avoid Overloading Agents" principle from Bandara et al. (2025):
+The `get_step_tools()` function loads only the MCP servers needed for each step:
 
 ```python
-from mdzen.tools.mcp_setup import STEP_SERVERS, get_step_tools
+from mdzen.workflow import STEP_SERVERS
+from mdzen.tools.mcp_setup import get_step_tools
 
-# Each step loads only the required MCP servers
-STEP_SERVERS = {
-    "prepare_complex": ["structure", "genesis"],  # 2 servers
-    "solvate": ["solvation"],                     # 1 server
-    "build_topology": ["amber"],                  # 1 server
-    "run_simulation": ["md_simulation"],          # 1 server
-}
+# STEP_SERVERS is defined in workflow.py (single source of truth)
+# "prepare_complex": ["structure", "genesis"]
+# "solvate": ["solvation"]
+# "build_topology": ["amber"]
+# "run_simulation": ["md_simulation"]
 
 # Get toolsets for a specific step
 toolsets = get_step_tools("solvate")  # Returns only solvation_server toolset
@@ -330,16 +339,6 @@ toolsets = get_step_tools("solvate")  # Returns only solvation_server toolset
 - Reduced token usage (1-2 servers per step vs all 5)
 - Clearer tool selection for LLM (fewer options = better choices)
 - Easier debugging (step-specific agents with focused prompts)
-
-**Step-Specific Agent Creation:**
-
-```python
-from mdzen.agents.setup_agent import create_step_agent
-
-# Create an agent for a specific step
-agent, toolsets = create_step_agent("prepare_complex")
-# Agent has only structure_server and genesis_server tools
-```
 
 ### Prompt Management
 

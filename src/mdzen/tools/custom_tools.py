@@ -9,7 +9,9 @@ from typing import Optional
 from google.adk.tools import ToolContext
 
 from mdzen.schemas import SimulationBrief
-from mdzen.utils import (
+from mdzen.workflow import (
+    STEP_ESTIMATES,
+    STEP_ALLOWED_TOOLS,
     get_current_step_info,
     validate_step_prerequisites,
 )
@@ -143,22 +145,6 @@ def generate_simulation_brief(
 # =============================================================================
 # PHASE 2: SETUP TOOLS
 # =============================================================================
-
-# Step time estimates for user feedback
-STEP_ESTIMATES: dict[str, str] = {
-    "prepare_complex": "1-5 minutes",
-    "solvate": "2-10 minutes",
-    "build_topology": "1-3 minutes",
-    "run_simulation": "5-60 minutes (depends on simulation_time)",
-}
-
-# Tool names allowed per step (for validation and guidance)
-STEP_ALLOWED_TOOLS: dict[str, list[str]] = {
-    "prepare_complex": ["prepare_complex", "fetch_molecules", "predict_structure"],
-    "solvate": ["solvate_structure"],
-    "build_topology": ["build_amber_system"],
-    "run_simulation": ["run_md_simulation"],
-}
 
 
 def get_workflow_status(

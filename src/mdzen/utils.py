@@ -10,6 +10,16 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any
 
+# Re-export workflow definitions for backward compatibility
+from mdzen.workflow import (
+    SETUP_STEPS,
+    STEP_TO_TOOL,
+    TOOL_TO_STEP,
+    STEP_INPUTS,
+    validate_step_prerequisites,
+    get_current_step_info,
+)
+
 
 # =============================================================================
 # DATE AND TIME UTILITIES
@@ -168,96 +178,6 @@ def extract_output_paths(result: dict) -> dict:
         outputs["ligand_params"] = result["ligand_params"]
 
     return outputs
-
-
-# =============================================================================
-# WORKFLOW STEP MANAGEMENT
-# =============================================================================
-
-SETUP_STEPS = ["prepare_complex", "solvate", "build_topology", "run_simulation"]
-
-STEP_TO_TOOL = {
-    "prepare_complex": "prepare_complex",
-    "solvate": "solvate_structure",
-    "build_topology": "build_amber_system",
-    "run_simulation": "run_md_simulation",
-}
-
-TOOL_TO_STEP = {v: k for k, v in STEP_TO_TOOL.items()}
-
-STEP_INPUTS = {
-    "prepare_complex": "Requires: PDB ID or structure file",
-    "solvate": "Requires: merged_pdb from outputs['merged_pdb']",
-    "build_topology": "Requires: solvated_pdb, box_dimensions",
-    "run_simulation": "Requires: prmtop, rst7",
-}
-
-
-def validate_step_prerequisites(step: str, outputs: dict) -> tuple[bool, list[str]]:
-    """Validate that prerequisites for a step are met.
-
-    Args:
-        step: Step name (e.g., "solvate")
-        outputs: Current outputs dictionary
-
-    Returns:
-        Tuple of (is_valid, list of missing requirements)
-    """
-    missing = []
-
-    if step == "prepare_complex":
-        # No prerequisites from previous steps
-        pass
-    elif step == "solvate":
-        if "merged_pdb" not in outputs:
-            missing.append("merged_pdb (from prepare_complex)")
-    elif step == "build_topology":
-        if "solvated_pdb" not in outputs:
-            missing.append("solvated_pdb (from solvate)")
-        if "box_dimensions" not in outputs:
-            missing.append("box_dimensions (from solvate)")
-    elif step == "run_simulation":
-        if "prmtop" not in outputs:
-            missing.append("prmtop (from build_topology)")
-        if "rst7" not in outputs:
-            missing.append("rst7 (from build_topology)")
-
-    return len(missing) == 0, missing
-
-
-def get_current_step_info(completed_steps: list) -> dict:
-    """Get information about the current workflow step.
-
-    Args:
-        completed_steps: List of completed step names (may have duplicates)
-
-    Returns:
-        Dictionary with current_step, next_tool, step_index, and input_requirements
-    """
-    # Deduplicate completed steps
-    completed_set = set(completed_steps)
-
-    # Find first incomplete step in order
-    for i, step in enumerate(SETUP_STEPS):
-        if step not in completed_set:
-            return {
-                "current_step": step,
-                "next_tool": STEP_TO_TOOL[step],
-                "step_index": i + 1,
-                "total_steps": len(SETUP_STEPS),
-                "input_requirements": STEP_INPUTS[step],
-                "is_complete": False,
-            }
-
-    # All steps completed
-    return {
-        "current_step": None,
-        "next_tool": None,
-        "step_index": len(SETUP_STEPS),
-        "total_steps": len(SETUP_STEPS),
-        "input_requirements": "",
-        "is_complete": True,
-    }
 
 
 # =============================================================================

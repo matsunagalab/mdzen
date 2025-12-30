@@ -141,30 +141,6 @@ def get_timeout(timeout_type: str) -> int:
     return timeout_map.get(timeout_type, settings.default_timeout)
 
 
-def get_adk_config() -> dict:
-    """Get ADK-specific configuration as a dictionary.
-
-    Returns:
-        Dictionary with ADK configuration settings
-    """
-    return {
-        "clarification_model": get_litellm_model("clarification"),
-        "setup_model": get_litellm_model("setup"),
-        "compress_model": get_litellm_model("compress"),
-        "output_dir": str(get_output_dir()),
-        "max_message_history": settings.max_message_history,
-        "default_timeout": settings.default_timeout,
-        "md_simulation_timeout": settings.md_simulation_timeout,
-        "servers": {
-            "structure": get_server_path("structure"),
-            "genesis": get_server_path("genesis"),
-            "solvation": get_server_path("solvation"),
-            "amber": get_server_path("amber"),
-            "md_simulation": get_server_path("md_simulation"),
-        },
-    }
-
-
 __all__ = [
     "settings",
     "Settings",
@@ -172,5 +148,4 @@ __all__ = [
     "get_server_path",
     "get_litellm_model",
     "get_timeout",
-    "get_adk_config",
 ]

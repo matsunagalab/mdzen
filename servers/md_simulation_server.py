@@ -8,18 +8,22 @@ Provides MCP tools for:
 - Secondary structure analysis
 """
 
+# Configure logging early to suppress noisy third-party logs
 import os
 import sys
-from pathlib import Path
-from typing import Optional
-
-import numpy as np
-from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory, create_unique_subdir, generate_job_id
+from common.utils import setup_logger  # noqa: E402
 
 logger = setup_logger(__name__)
+
+from pathlib import Path  # noqa: E402
+from typing import Optional  # noqa: E402
+
+import numpy as np  # noqa: E402
+from mcp.server.fastmcp import FastMCP  # noqa: E402
+
+from common.utils import ensure_directory, create_unique_subdir, generate_job_id  # noqa: E402
 
 # Create FastMCP server
 mcp = FastMCP("MD Simulation Server")

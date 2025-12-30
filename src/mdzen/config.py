@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     membrane_timeout: int = 1800
     md_simulation_timeout: int = 3600
 
+    # Logging settings
+    log_level: str = "WARNING"  # DEBUG, INFO, WARNING, ERROR
+
     # Message history limit
     max_message_history: int = 6
 

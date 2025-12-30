@@ -11,25 +11,30 @@ Provides MCP tools for:
 - LLM-friendly structure validation and error reporting at each step
 """
 
-import httpx
-import json
+# Configure logging early to suppress noisy third-party logs
+import logging
 import os
-import re
-import shutil
 import sys
-import tempfile
-from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
-
-from pdbfixer import PDBFixer
-from openmm.app import PDBFile
-from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb, get_pdb_chains, create_unique_subdir, generate_job_id
-from common.base import BaseToolWrapper
+from common.utils import setup_logger  # noqa: E402
 
 logger = setup_logger(__name__)
+
+import httpx  # noqa: E402
+import json  # noqa: E402
+import re  # noqa: E402
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import List, Optional, Dict, Any, Tuple  # noqa: E402
+
+from pdbfixer import PDBFixer  # noqa: E402
+from openmm.app import PDBFile  # noqa: E402
+from mcp.server.fastmcp import FastMCP  # noqa: E402
+
+from common.utils import ensure_directory, count_atoms_in_pdb, get_pdb_chains, create_unique_subdir, generate_job_id  # noqa: E402
+from common.base import BaseToolWrapper  # noqa: E402
 
 # Create FastMCP server
 mcp = FastMCP("Structure Server")

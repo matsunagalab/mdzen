@@ -10,26 +10,30 @@ Provides MCP tools for:
 - Drug-likeness assessment (Lipinski's Rule of Five)
 """
 
-import datetime
-import json
+# Configure logging early to suppress noisy third-party logs
 import os
-import string
-import subprocess
 import sys
-from pathlib import Path
-from typing import Dict, Any, Optional
-
-import pubchempy as pcp
-import yaml
-from mcp.server.fastmcp import FastMCP
-from rdkit import Chem
-from rdkit.Chem import Descriptors
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory, create_unique_subdir, generate_job_id
-from common.base import BaseToolWrapper
+from common.utils import setup_logger  # noqa: E402
 
 logger = setup_logger(__name__)
+
+import datetime  # noqa: E402
+import json  # noqa: E402
+import string  # noqa: E402
+import subprocess  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Dict, Any, Optional  # noqa: E402
+
+import pubchempy as pcp  # noqa: E402
+import yaml  # noqa: E402
+from mcp.server.fastmcp import FastMCP  # noqa: E402
+from rdkit import Chem  # noqa: E402
+from rdkit.Chem import Descriptors  # noqa: E402
+
+from common.utils import ensure_directory, create_unique_subdir, generate_job_id  # noqa: E402
+from common.base import BaseToolWrapper  # noqa: E402
 
 # Create FastMCP server
 mcp = FastMCP("Genesis Server")

@@ -9,19 +9,25 @@ Provides MCP tools for:
 Uses packmol-memgen from AmberTools for robust solvation and membrane building.
 """
 
-import json
-import logging
+# Configure logging early to suppress noisy third-party logs
 import os
-import subprocess
 import sys
-from pathlib import Path
-from typing import Optional
-
-from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb, create_unique_subdir, generate_job_id
-from common.base import BaseToolWrapper, get_solvation_timeout, get_membrane_timeout
+from common.utils import setup_logger  # noqa: E402
+
+logger = setup_logger(__name__)
+
+import json  # noqa: E402
+import logging  # noqa: E402
+import subprocess  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Optional  # noqa: E402
+
+from mcp.server.fastmcp import FastMCP  # noqa: E402
+
+from common.utils import ensure_directory, count_atoms_in_pdb, create_unique_subdir, generate_job_id  # noqa: E402
+from common.base import BaseToolWrapper, get_solvation_timeout, get_membrane_timeout  # noqa: E402
 
 
 def extract_box_size_from_cryst1(pdb_file: str) -> Optional[dict]:

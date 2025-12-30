@@ -13,19 +13,30 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
-def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
-    """Setup logger
-    
+def setup_logger(name: str, level: int | None = None) -> logging.Logger:
+    """Setup logger with environment-based configuration.
+
+    Log level can be set via MDZEN_LOG_LEVEL environment variable.
+    Default is WARNING to reduce noise.
+
     Args:
         name: Logger name
-        level: Log level
-    
+        level: Log level (optional, uses MDZEN_LOG_LEVEL if not provided)
+
     Returns:
         Configured logger
     """
+    # Get log level from environment if not specified
+    if level is None:
+        level_str = os.getenv("MDZEN_LOG_LEVEL", "WARNING").upper()
+        level = getattr(logging, level_str, logging.WARNING)
+
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    
+
+    # Prevent duplicate logs by not propagating to root logger
+    logger.propagate = False
+
     if not logger.handlers:
         handler = logging.StreamHandler()
         formatter = logging.Formatter(
@@ -33,8 +44,34 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-    
+
+    # Quiet noisy third-party loggers (only on first call)
+    _quiet_noisy_loggers()
+
     return logger
+
+
+_noisy_loggers_quieted = False
+
+
+def _quiet_noisy_loggers():
+    """Reduce noise from third-party libraries."""
+    global _noisy_loggers_quieted
+    if _noisy_loggers_quieted:
+        return
+    _noisy_loggers_quieted = True
+
+    # Quiet MCP server internal logs
+    logging.getLogger("mcp.server").setLevel(logging.WARNING)
+    logging.getLogger("mcp").setLevel(logging.WARNING)
+
+    # Quiet HTTP client logs
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+    # Quiet other noisy loggers
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
 
 
 def ensure_directory(path: Union[str, Path]) -> Path:

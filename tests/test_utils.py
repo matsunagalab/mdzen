@@ -20,10 +20,12 @@ from mdzen.utils import (
     extract_output_paths,
     format_duration,
     parse_tool_result,
-    validate_step_prerequisites,
     canonical_tool_name,
     safe_dict,
     safe_list,
+)
+from mdzen.workflow import (
+    validate_step_prerequisites,
     get_current_step_info,
     SETUP_STEPS,
     STEP_TO_TOOL,

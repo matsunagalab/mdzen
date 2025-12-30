@@ -10,7 +10,6 @@ Provides MCP tools for:
 
 import os
 import sys
-import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -18,13 +17,7 @@ import numpy as np
 from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory, create_unique_subdir
-
-
-def generate_job_id() -> str:
-    """Generate a unique job ID for tracking operations."""
-    return uuid.uuid4().hex[:8]
-
+from common.utils import setup_logger, ensure_directory, create_unique_subdir, generate_job_id
 
 logger = setup_logger(__name__)
 

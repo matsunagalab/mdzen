@@ -16,7 +16,6 @@ import os
 import string
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -27,14 +26,8 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory, create_unique_subdir
+from common.utils import setup_logger, ensure_directory, create_unique_subdir, generate_job_id
 from common.base import BaseToolWrapper
-
-
-def generate_job_id() -> str:
-    """Generate a unique job ID for tracking operations."""
-    return uuid.uuid4().hex[:8]
-
 
 logger = setup_logger(__name__)
 

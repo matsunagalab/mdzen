@@ -13,26 +13,19 @@ import json
 import os
 import re
 import sys
-import uuid
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory, create_unique_subdir
+from common.utils import setup_logger, ensure_directory, create_unique_subdir, generate_job_id
 from common.base import BaseToolWrapper, get_default_timeout
 from common.errors import (
     create_file_not_found_error,
     create_tool_not_available_error,
     create_validation_error,
 )
-
-
-def generate_job_id() -> str:
-    """Generate a unique job ID for tracking operations."""
-    return uuid.uuid4().hex[:8]
-
 
 logger = setup_logger(__name__)
 

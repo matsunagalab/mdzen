@@ -15,8 +15,7 @@ from google.adk.tools.mcp_tool import McpToolset
 from mdzen.config import get_litellm_model
 from mdzen.prompts import get_setup_instruction
 from mdzen.tools.mcp_setup import get_setup_tools
-from mdzen.tools.custom_tools import get_workflow_status
-from mdzen.tools.state_wrappers import create_workflow_status_wrapper
+from mdzen.tools.state_wrappers import get_workflow_status_tool
 
 
 def create_setup_agent() -> tuple[LlmAgent, list[McpToolset]]:
@@ -34,8 +33,8 @@ def create_setup_agent() -> tuple[LlmAgent, list[McpToolset]]:
     # Get all MCP tools for setup workflow
     mcp_tools = get_setup_tools()
 
-    # Create FunctionTool for workflow status using state wrapper
-    status_tool = FunctionTool(create_workflow_status_wrapper(get_workflow_status))
+    # Create FunctionTool for workflow status
+    status_tool = FunctionTool(get_workflow_status_tool)
 
     # Combine all tools
     all_tools = mcp_tools + [status_tool]

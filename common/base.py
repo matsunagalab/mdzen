@@ -14,53 +14,32 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Timeout Configuration (from environment variables)
-# These are used by FastMCP servers which run as separate processes
+# Timeout Configuration - delegates to mdzen.config for single source of truth
 # =============================================================================
 
 
 def get_default_timeout() -> int:
-    """Get default timeout from environment or use fallback.
-
-    Environment variable: MDZEN_DEFAULT_TIMEOUT (default: 300 seconds)
-
-    Returns:
-        Timeout in seconds
-    """
-    return int(os.getenv("MDZEN_DEFAULT_TIMEOUT", "300"))
+    """Get default timeout. Delegates to mdzen.config."""
+    from mdzen.config import get_timeout
+    return get_timeout("default")
 
 
 def get_solvation_timeout() -> int:
-    """Get solvation timeout (longer for complex systems).
-
-    Environment variable: MDZEN_SOLVATION_TIMEOUT (default: 600 seconds)
-
-    Returns:
-        Timeout in seconds
-    """
-    return int(os.getenv("MDZEN_SOLVATION_TIMEOUT", "600"))
+    """Get solvation timeout. Delegates to mdzen.config."""
+    from mdzen.config import get_timeout
+    return get_timeout("solvation")
 
 
 def get_membrane_timeout() -> int:
-    """Get membrane building timeout (longest operation).
-
-    Environment variable: MDZEN_MEMBRANE_TIMEOUT (default: 1800 seconds)
-
-    Returns:
-        Timeout in seconds
-    """
-    return int(os.getenv("MDZEN_MEMBRANE_TIMEOUT", "1800"))
+    """Get membrane timeout. Delegates to mdzen.config."""
+    from mdzen.config import get_timeout
+    return get_timeout("membrane")
 
 
 def get_md_simulation_timeout() -> int:
-    """Get MD simulation timeout (can be very long).
-
-    Environment variable: MDZEN_MD_SIMULATION_TIMEOUT (default: 3600 seconds)
-
-    Returns:
-        Timeout in seconds
-    """
-    return int(os.getenv("MDZEN_MD_SIMULATION_TIMEOUT", "3600"))
+    """Get MD simulation timeout. Delegates to mdzen.config."""
+    from mdzen.config import get_timeout
+    return get_timeout("md_simulation")
 
 
 class BaseToolWrapper:

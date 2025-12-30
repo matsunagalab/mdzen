@@ -9,8 +9,7 @@ from google.adk.tools.function_tool import FunctionTool
 
 from mdzen.config import get_litellm_model
 from mdzen.prompts import get_validation_instruction
-from mdzen.tools.custom_tools import run_validation
-from mdzen.tools.state_wrappers import create_validation_wrapper
+from mdzen.tools.state_wrappers import run_validation_tool
 
 
 def create_validation_agent() -> LlmAgent:
@@ -25,8 +24,8 @@ def create_validation_agent() -> LlmAgent:
     Returns:
         Configured LlmAgent for validation phase
     """
-    # Create FunctionTool for validation using state wrapper
-    validation_tool = FunctionTool(create_validation_wrapper(run_validation))
+    # Create FunctionTool for validation
+    validation_tool = FunctionTool(run_validation_tool)
 
     return LlmAgent(
         model=LiteLlm(model=get_litellm_model("compress")),  # Use fast model for validation

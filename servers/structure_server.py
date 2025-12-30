@@ -18,7 +18,6 @@ import re
 import shutil
 import sys
 import tempfile
-import uuid
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
@@ -27,13 +26,8 @@ from openmm.app import PDBFile
 from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb, get_pdb_chains, create_unique_subdir
+from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb, get_pdb_chains, create_unique_subdir, generate_job_id
 from common.base import BaseToolWrapper
-
-
-def generate_job_id() -> str:
-    """Generate a unique job ID for tracking operations."""
-    return uuid.uuid4().hex[:8]
 
 logger = setup_logger(__name__)
 

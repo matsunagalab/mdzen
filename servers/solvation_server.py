@@ -14,20 +14,14 @@ import logging
 import os
 import subprocess
 import sys
-import uuid
 from pathlib import Path
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb, create_unique_subdir
+from common.utils import setup_logger, ensure_directory, count_atoms_in_pdb, create_unique_subdir, generate_job_id
 from common.base import BaseToolWrapper, get_solvation_timeout, get_membrane_timeout
-
-
-def generate_job_id() -> str:
-    """Generate a unique job ID for tracking operations."""
-    return uuid.uuid4().hex[:8]
 
 
 def extract_box_size_from_cryst1(pdb_file: str) -> Optional[dict]:

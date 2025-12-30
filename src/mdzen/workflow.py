@@ -65,43 +65,12 @@ STEP_CONFIG: dict[str, StepConfig] = {
 # Derived mappings (for backward compatibility)
 # =============================================================================
 
-def _build_step_to_tool() -> dict[str, str]:
-    """Build step -> tool mapping from STEP_CONFIG."""
-    return {step: cfg["tool"] for step, cfg in STEP_CONFIG.items()}
-
-
-def _build_tool_to_step() -> dict[str, str]:
-    """Build tool -> step mapping from STEP_CONFIG."""
-    return {cfg["tool"]: step for step, cfg in STEP_CONFIG.items()}
-
-
-def _build_step_inputs() -> dict[str, str]:
-    """Build step -> inputs mapping from STEP_CONFIG."""
-    return {step: cfg["inputs"] for step, cfg in STEP_CONFIG.items()}
-
-
-def _build_step_servers() -> dict[str, list[str]]:
-    """Build step -> servers mapping from STEP_CONFIG."""
-    return {step: cfg["servers"] for step, cfg in STEP_CONFIG.items()}
-
-
-def _build_step_estimates() -> dict[str, str]:
-    """Build step -> estimate mapping from STEP_CONFIG."""
-    return {step: cfg["estimate"] for step, cfg in STEP_CONFIG.items()}
-
-
-def _build_step_allowed_tools() -> dict[str, list[str]]:
-    """Build step -> allowed_tools mapping from STEP_CONFIG."""
-    return {step: cfg["allowed_tools"] for step, cfg in STEP_CONFIG.items()}
-
-
-# Backward-compatible exports
-STEP_TO_TOOL: dict[str, str] = _build_step_to_tool()
-TOOL_TO_STEP: dict[str, str] = _build_tool_to_step()
-STEP_INPUTS: dict[str, str] = _build_step_inputs()
-STEP_SERVERS: dict[str, list[str]] = _build_step_servers()
-STEP_ESTIMATES: dict[str, str] = _build_step_estimates()
-STEP_ALLOWED_TOOLS: dict[str, list[str]] = _build_step_allowed_tools()
+STEP_TO_TOOL: dict[str, str] = {step: cfg["tool"] for step, cfg in STEP_CONFIG.items()}
+TOOL_TO_STEP: dict[str, str] = {cfg["tool"]: step for step, cfg in STEP_CONFIG.items()}
+STEP_INPUTS: dict[str, str] = {step: cfg["inputs"] for step, cfg in STEP_CONFIG.items()}
+STEP_SERVERS: dict[str, list[str]] = {step: cfg["servers"] for step, cfg in STEP_CONFIG.items()}
+STEP_ESTIMATES: dict[str, str] = {step: cfg["estimate"] for step, cfg in STEP_CONFIG.items()}
+STEP_ALLOWED_TOOLS: dict[str, list[str]] = {step: cfg["allowed_tools"] for step, cfg in STEP_CONFIG.items()}
 
 
 # =============================================================================

@@ -24,6 +24,7 @@ from mdzen.cli.runner import (  # noqa: E402
     display_results,
     display_simulation_brief,
     display_debug_state,
+    run_agent_with_events,
 )
 
 app = typer.Typer(help="MDZen - AI Agent for Molecular Dynamics Setup")
@@ -224,14 +225,13 @@ async def _run_interactive(session_service, session_id: str, request: str):
         )
 
         # Run clarification
-        async for event in runner.run_async(
-            user_id=DEFAULT_USER,
+        await run_agent_with_events(
+            runner=runner,
             session_id=session_id,
-            new_message=create_message(request),
-        ):
-            if event.is_final_response():
-                text = extract_text_from_content(event.content)
-                console.print(f"\n[blue]Agent:[/blue]\n{text}\n")
+            message=create_message(request),
+            console=console,
+            show_progress=False,
+        )
 
         # Interactive clarification loop
         state = await get_session_state(session_service, APP_NAME, DEFAULT_USER, session_id)
@@ -259,15 +259,13 @@ async def _run_interactive(session_service, session_id: str, request: str):
                     break
                 else:
                     # User wants to modify - send feedback
-                    async for event in runner.run_async(
-                        user_id=DEFAULT_USER,
+                    await run_agent_with_events(
+                        runner=runner,
                         session_id=session_id,
-                        new_message=create_message(user_input),
-                    ):
-                        if event.is_final_response():
-                            text = extract_text_from_content(event.content)
-                            console.print(f"\n[blue]Agent:[/blue]\n{text}\n")
-
+                        message=create_message(user_input),
+                        console=console,
+                        show_progress=False,
+                    )
                     state = await get_session_state(session_service, APP_NAME, DEFAULT_USER, session_id)
             else:
                 # No brief yet, ask for more info
@@ -277,15 +275,13 @@ async def _run_interactive(session_service, session_id: str, request: str):
                     console.print("[yellow]Session ended.[/yellow]")
                     return
 
-                async for event in runner.run_async(
-                    user_id=DEFAULT_USER,
+                await run_agent_with_events(
+                    runner=runner,
                     session_id=session_id,
-                    new_message=create_message(user_input),
-                ):
-                    if event.is_final_response():
-                        text = extract_text_from_content(event.content)
-                        console.print(f"\n[blue]Agent:[/blue]\n{text}\n")
-
+                    message=create_message(user_input),
+                    console=console,
+                    show_progress=False,
+                )
                 state = await get_session_state(session_service, APP_NAME, DEFAULT_USER, session_id)
 
         # Phase 2-3: Setup and Validation
@@ -305,25 +301,14 @@ async def _run_interactive(session_service, session_id: str, request: str):
             # Known agents in setup_validation_agent hierarchy
             known_agents = {"setup_validation_agent", "setup_agent", "validation_agent"}
 
-            async for event in runner.run_async(
-                user_id=DEFAULT_USER,
+            await run_agent_with_events(
+                runner=runner,
                 session_id=session_id,
-                new_message=create_message("continue"),
-            ):
-                # Filter events - only process events from known agents
-                if hasattr(event, "author") and event.author:
-                    if event.author not in known_agents and event.author != "user":
-                        continue
-
-                    if event.is_final_response():
-                        text = extract_text_from_content(event.content)
-                        if text:
-                            console.print(f"\n[green]Setup Agent:[/green]\n{text}\n")
-                    elif hasattr(event, "content") and event.content:
-                        text = extract_text_from_content(event.content)
-                        if text:
-                            first_line = text.split("\n")[0][:80]
-                            console.print(f"[dim][{event.author}] {first_line}...[/dim]")
+                message=create_message("continue"),
+                console=console,
+                show_progress=True,
+                known_agents=known_agents,
+            )
 
         # Show results
         state = await get_session_state(session_service, APP_NAME, DEFAULT_USER, session_id)

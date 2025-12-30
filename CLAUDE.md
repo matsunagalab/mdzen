@@ -144,7 +144,7 @@ mdzen/
 │   ├── tools/
 │   │   ├── mcp_setup.py            # McpToolset factory
 │   │   ├── custom_tools.py         # FunctionTools + progress tracking
-│   │   └── state_wrappers.py       # ToolContext state extraction
+│   │   └── state_wrappers.py       # ToolContext state extraction (direct functions)
 │   ├── config.py                   # Settings + LiteLLM conversion
 │   ├── prompts.py                  # Prompt loader + get_step_instruction()
 │   ├── schemas.py                  # Pydantic models
@@ -159,9 +159,9 @@ mdzen/
 │   └── md_simulation_server.py     # OpenMM MD execution & analysis
 │
 ├── common/                # Shared utilities
-│   ├── base.py            # BaseToolWrapper + timeout config
+│   ├── base.py            # BaseToolWrapper (delegates timeouts to config.py)
 │   ├── errors.py          # Error handling
-│   └── utils.py           # Common utilities
+│   └── utils.py           # Common utilities (generate_job_id, etc.)
 │
 ├── notebooks/             # Testing and demos
 └── checkpoints/           # Session persistence
@@ -294,6 +294,8 @@ STEP_CONFIG = {
 }
 ```
 
+**Note:** Always import workflow definitions (`SETUP_STEPS`, `STEP_TO_TOOL`, `validate_step_prerequisites`, etc.) directly from `mdzen.workflow`, not from `mdzen.utils`.
+
 ### Session State Serialization
 
 ADK serializes state values as JSON strings. Use safe helpers:
@@ -308,13 +310,16 @@ completed = safe_list(session.state.get("completed_steps", []))
 
 ### Timeout Configuration
 
-`common/base.py` provides configurable timeouts via environment variables:
+Timeout configuration is centralized in `src/mdzen/config.py`. The `common/base.py` functions delegate to `config.py` for backward compatibility:
 
 ```python
-from common.base import get_default_timeout, get_solvation_timeout
+# Preferred: Use config.py directly
+from mdzen.config import get_timeout
 
-tleap_timeout = get_default_timeout()        # MDZEN_DEFAULT_TIMEOUT (300s)
-solvation_timeout = get_solvation_timeout()  # MDZEN_SOLVATION_TIMEOUT (600s)
+timeout = get_timeout("solvation")  # MDZEN_SOLVATION_TIMEOUT (600s)
+
+# Legacy: common/base.py functions (delegate to config.py)
+from common.base import get_default_timeout, get_solvation_timeout
 ```
 
 ### Step-Specific Tool Loading

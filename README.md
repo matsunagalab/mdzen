@@ -87,11 +87,11 @@ pip install 'boltz[cuda]'
 # Interactive mode - setup while chatting with agent (recommended)
 python main.py run "Setup MD for PDB 1AKE"
 
-# Batch mode - fully automated workflow execution
-python main.py run --batch "Setup MD for PDB 1AKE in explicit water, 1 ns at 300K"
+# Non-interactive mode (like claude -p)
+python main.py run -p "Setup MD for PDB 1AKE in explicit water, 1 ns at 300K"
 
-# Resume interrupted session
-python main.py run --session-id md_session_xxxxx
+# Resume session (like claude -r)
+python main.py run -r job_abc12345
 
 # List MCP servers
 python main.py list-servers
@@ -179,11 +179,15 @@ mdzen/
 │   ├── errors.py                   # Unified error handling
 │   └── utils.py                    # Common utilities
 │
-├── notebooks/            # For testing and demos
-├── checkpoints/          # Session persistence
-├── ARCHITECTURE.md       # Detailed architecture
-├── CLAUDE.md             # Claude Code guidance
-└── README.md             # This file
+└── notebooks/            # For testing and demos
+
+# Job directories created at runtime (in cwd):
+# ./job_XXXXXXXX/
+#    ├── session.db        # Session persistence (SQLite)
+#    ├── session_info.json # Job metadata
+#    ├── chat_history.md   # Conversation log
+#    ├── *.pdb, *.cif      # Downloaded/generated structures
+#    └── ...               # Other workflow outputs
 ```
 
 ## Development Workflow
@@ -242,7 +246,7 @@ Available settings:
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `MDZEN_OUTPUT_DIR` | `./outputs` | Output directory |
+| `MDZEN_OUTPUT_DIR` | `.` (cwd) | Output directory for job folders |
 | `MDZEN_CLARIFICATION_MODEL` | `anthropic:claude-haiku-4-5-20251001` | Phase 1 model |
 | `MDZEN_SETUP_MODEL` | `anthropic:claude-sonnet-4-20250514` | Phase 2 model |
 | `MDZEN_COMPRESS_MODEL` | `anthropic:claude-haiku-4-5-20251001` | Compression model |

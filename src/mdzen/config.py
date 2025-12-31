@@ -22,8 +22,8 @@ class Settings(BaseSettings):
         MDZEN_SETUP_MODEL=anthropic:claude-sonnet-4-20250514
     """
 
-    # Output directory
-    output_dir: str = "./outputs"
+    # Output directory (defaults to current working directory)
+    output_dir: str = "."
 
     # Model settings
     clarification_model: str = "anthropic:claude-haiku-4-5-20251001"

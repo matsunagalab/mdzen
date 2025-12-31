@@ -419,7 +419,9 @@ All settings can be configured via `MDZEN_` prefixed environment variables:
 
 ```bash
 # .env or shell exports
-export MDZEN_OUTPUT_DIR="./output"
+# Output directory defaults to current working directory (.)
+# Set explicitly if you want a different location:
+export MDZEN_OUTPUT_DIR="./outputs"
 export MDZEN_CLARIFICATION_MODEL="anthropic:claude-haiku-4-5-20251001"
 export MDZEN_SETUP_MODEL="anthropic:claude-sonnet-4-20250514"
 export MDZEN_DEFAULT_TIMEOUT=300

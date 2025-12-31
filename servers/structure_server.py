@@ -12,7 +12,6 @@ Provides MCP tools for:
 """
 
 # Configure logging early to suppress noisy third-party logs
-import logging
 import os
 import sys
 
@@ -21,7 +20,6 @@ from common.utils import setup_logger  # noqa: E402
 
 logger = setup_logger(__name__)
 
-import httpx  # noqa: E402
 import json  # noqa: E402
 import re  # noqa: E402
 import shutil  # noqa: E402
@@ -33,7 +31,7 @@ from pdbfixer import PDBFixer  # noqa: E402
 from openmm.app import PDBFile  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 
-from common.utils import ensure_directory, count_atoms_in_pdb, get_pdb_chains, create_unique_subdir, generate_job_id  # noqa: E402
+from common.utils import ensure_directory, create_unique_subdir, generate_job_id  # noqa: E402
 from common.base import BaseToolWrapper  # noqa: E402
 
 # Create FastMCP server
@@ -649,195 +647,6 @@ def _estimate_physiological_charge(charge_info: Dict[str, Any], ph: float = 7.4)
     return estimated_charge
 
 
-@mcp.tool()
-async def fetch_molecules(pdb_id: str, source: str = "pdb", prefer_format: str = "pdb", output_dir: Optional[str] = None) -> dict:
-    """Fetch a structure file from PDB, AlphaFold, PDB-REDO, or OPM.
-
-    Args:
-        pdb_id: Protein identifier, e.g., '1ABC'
-        source: Data source ('pdb', 'alphafold', 'pdb-redo', or 'opm')
-                Use 'opm' for membrane proteins to get pre-oriented structures.
-        prefer_format: Preferred file format for 'pdb' source ('pdb' or 'cif').
-                      - 'pdb': Download PDB format (recommended for most workflows).
-                        Chain IDs are simple (A, B, C) and intuitive to use.
-                      - 'cif': Download mmCIF format. Use when you need unique
-                        identifiers for many chains (label_asym_id).
-                      Falls back to the other format if preferred is not available.
-                      Note: Only applies to source='pdb'. Other sources have fixed formats.
-        output_dir: Directory to save the downloaded file.
-                   If provided, the file is saved in this directory.
-                   If not provided, saves to the default working directory.
-
-    Returns:
-        Dict with:
-            - success: bool - True if fetch completed successfully
-            - pdb_id: str - The requested PDB ID (uppercased)
-            - source: str - The data source used
-            - file_path: str - Path to the downloaded file (None if failed)
-            - file_format: str - Format of the downloaded file ('cif' or 'pdb')
-            - num_atoms: int - Number of atoms in the structure
-            - chains: list - List of chain identifiers
-            - errors: list[str] - Error messages (empty if success=True)
-            - warnings: list[str] - Non-critical issues encountered
-    """
-    logger.info(f"Fetching {pdb_id} from {source}")
-    
-    # Initialize result structure for LLM error handling
-    result = {
-        "success": False,
-        "pdb_id": pdb_id.upper(),
-        "source": source,
-        "file_path": None,
-        "file_format": None,
-        "num_atoms": 0,
-        "chains": [],
-        "errors": [],
-        "warnings": []
-    }
-    
-    pdb_id = pdb_id.upper()
-    
-    # Validate source
-    valid_sources = ["pdb", "alphafold", "pdb-redo", "opm"]
-    if source not in valid_sources:
-        result["errors"].append(f"Invalid source: '{source}'. Valid sources: {valid_sources}")
-        logger.error(f"Invalid source: {source}")
-        return result
-    
-    try:
-        if source == "pdb":
-            url_cif = f"https://files.rcsb.org/download/{pdb_id}.cif"
-            url_pdb = f"https://files.rcsb.org/download/{pdb_id}.pdb"
-            
-            # Determine download order based on prefer_format
-            if prefer_format == "cif":
-                primary_url, primary_ext = url_cif, "cif"
-                fallback_url, fallback_ext = url_pdb, "pdb"
-                fallback_msg = "mmCIF not available, falling back to PDB format"
-            else:  # prefer_format == "pdb" (default)
-                primary_url, primary_ext = url_pdb, "pdb"
-                fallback_url, fallback_ext = url_cif, "cif"
-                fallback_msg = "PDB format not available, falling back to mmCIF"
-            
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                r = await client.get(primary_url)
-                if r.status_code == 200:
-                    url, ext, content = primary_url, primary_ext, r.content
-                    result["file_format"] = primary_ext
-                else:
-                    result["warnings"].append(fallback_msg)
-                    r = await client.get(fallback_url)
-                    if r.status_code != 200:
-                        result["errors"].append(f"Structure not found: {pdb_id} (HTTP {r.status_code})")
-                        result["errors"].append("Hint: Verify the PDB ID is correct. Try searching at https://www.rcsb.org/")
-                        return result
-                    url, ext, content = fallback_url, fallback_ext, r.content
-                    result["file_format"] = fallback_ext
-                    
-        elif source == "alphafold":
-            url = f"https://alphafold.ebi.ac.uk/files/AF-{pdb_id}-F1-model_v4.pdb"
-            ext = "pdb"
-            result["file_format"] = "pdb"
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                r = await client.get(url)
-                if r.status_code != 200:
-                    result["errors"].append(f"AlphaFold structure not found: {pdb_id} (HTTP {r.status_code})")
-                    result["errors"].append("Hint: For AlphaFold, use UniProt ID (e.g., 'P12345'), not PDB ID")
-                    return result
-                content = r.content
-                
-        elif source == "pdb-redo":
-            url = f"https://pdb-redo.eu/db/{pdb_id}/{pdb_id}_final.pdb"
-            ext = "pdb"
-            result["file_format"] = "pdb"
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                r = await client.get(url)
-                if r.status_code != 200:
-                    result["errors"].append(f"PDB-REDO structure not found: {pdb_id} (HTTP {r.status_code})")
-                    result["errors"].append("Hint: Not all PDB entries have PDB-REDO versions. Try source='pdb' instead.")
-                    return result
-                content = r.content
-
-        elif source == "opm":
-            # OPM provides pre-oriented membrane protein structures
-            # The structure is positioned with membrane normal along Z-axis
-            url = f"https://opm-assets.storage.googleapis.com/pdb/{pdb_id.lower()}.pdb"
-            ext = "pdb"
-            result["file_format"] = "pdb"
-            result["preoriented"] = True  # OPM structures are membrane-oriented
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                r = await client.get(url)
-                if r.status_code != 200:
-                    result["errors"].append(f"OPM structure not found: {pdb_id} (HTTP {r.status_code})")
-                    result["errors"].append("Hint: Not all membrane proteins are in OPM. Check https://opm.phar.umich.edu/")
-                    result["errors"].append("Hint: For non-membrane proteins, use source='pdb' instead.")
-                    return result
-                content = r.content
-
-        # Write file to output_dir if provided, otherwise to WORKING_DIR
-        if output_dir is not None:
-            save_dir = Path(output_dir)
-            ensure_directory(save_dir)
-        else:
-            save_dir = WORKING_DIR
-        output_file = save_dir / f"{pdb_id}.{ext}"
-        with open(output_file, 'wb') as f:
-            f.write(content)
-        logger.info(f"Downloaded {pdb_id} to {output_file}")
-        
-        result["file_path"] = str(output_file)
-        
-        # Get structure statistics using gemmi for accurate parsing
-        try:
-            import gemmi
-            if ext == "cif":
-                doc = gemmi.cif.read(str(output_file))
-                block = doc[0]
-                st = gemmi.make_structure_from_block(block)
-            else:
-                st = gemmi.read_pdb(str(output_file))
-            st.setup_entities()
-            
-            # Count atoms
-            atom_count = sum(1 for model in st for chain in model for res in chain for atom in res)
-            result["num_atoms"] = atom_count
-            
-            # Get unique author chain IDs (auth_asym_id)
-            # These are the chain letters users expect (A, B, C, etc.)
-            model = st[0]
-            chain_ids = list(dict.fromkeys(chain.name for chain in model))  # Preserve order, remove duplicates
-            result["chains"] = chain_ids
-        except ImportError:
-            # Fall back to simple parsing if gemmi not available
-            result["num_atoms"] = count_atoms_in_pdb(output_file)
-            result["chains"] = get_pdb_chains(output_file)
-        except Exception as e:
-            result["warnings"].append(f"Could not parse structure statistics: {str(e)}")
-        
-        # Validate downloaded content
-        if result["num_atoms"] == 0:
-            result["warnings"].append("Downloaded file contains no atoms - may be empty or corrupted")
-        
-        result["success"] = True
-        logger.info(f"Successfully fetched {pdb_id}: {result['num_atoms']} atoms, chains: {result['chains']}")
-        
-    except httpx.TimeoutException:
-        result["errors"].append(f"Connection timeout while fetching {pdb_id}")
-        result["errors"].append("Hint: Check your internet connection or try again later")
-        logger.error(f"Timeout fetching {pdb_id}")
-        
-    except httpx.ConnectError as e:
-        result["errors"].append(f"Connection error: {str(e)}")
-        result["errors"].append("Hint: Check your internet connection")
-        logger.error(f"Connection error: {e}")
-        
-    except Exception as e:
-        result["errors"].append(f"Unexpected error: {type(e).__name__}: {str(e)}")
-        logger.error(f"Unexpected error fetching {pdb_id}: {e}")
-    
-    return result
-
-
 # Define standard amino acids and water (module-level constants for reuse)
 AMINO_ACIDS = {
     'ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 
@@ -847,8 +656,7 @@ AMINO_ACIDS = {
 WATER_NAMES = {'HOH', 'WAT', 'H2O', 'DOD', 'D2O'}
 
 
-@mcp.tool()
-def inspect_molecules(structure_file: str) -> dict:
+def _inspect_molecules_impl(structure_file: str) -> dict:
     """Inspect an mmCIF or PDB structure file and return detailed molecular information.
     
     This tool examines a structure file without modifying it, returning comprehensive
@@ -1283,7 +1091,7 @@ def split_molecules(
     }
     
     # First, analyze the structure
-    analysis = inspect_molecules(structure_file)
+    analysis = _inspect_molecules_impl(structure_file)
     
     if not analysis["success"]:
         result["errors"] = analysis["errors"]
@@ -2979,7 +2787,7 @@ def prepare_complex(
     try:
         # Step 1: Inspect structure
         logger.info("Step 1: Inspecting structure...")
-        inspection = inspect_molecules(str(structure_file))
+        inspection = _inspect_molecules_impl(str(structure_file))
 
         # Token optimization: Store only essential inspection info (not full chains/entities)
         result["inspection"] = {

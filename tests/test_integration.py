@@ -74,6 +74,8 @@ class TestMCPSetup:
 
         toolsets = create_mcp_toolsets()
         assert isinstance(toolsets, dict)
+        assert len(toolsets) == 6  # 6 servers
+        assert "research" in toolsets
         assert "structure" in toolsets
         assert "genesis" in toolsets
         assert "solvation" in toolsets
@@ -107,7 +109,7 @@ class TestMCPSetup:
 
         tools = get_setup_tools()
         assert isinstance(tools, list)
-        assert len(tools) == 5  # All 5 servers
+        assert len(tools) == 6  # All 6 servers
 
 
 class TestConfig:

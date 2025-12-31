@@ -76,7 +76,7 @@ The system follows a **3-phase workflow pattern** using Google ADK's SequentialA
 
 1. **Phase 1: Clarification**
    - Pattern: **LlmAgent** with MCP tools
-   - Tools: `fetch_molecules`, `inspect_molecules` (structure inspection before asking questions)
+   - Tools: `download_structure`, `get_alphafold_structure`, `inspect_molecules`, `search_proteins`, `get_protein_info` (from research_server)
    - Outputs: Structured `SimulationBrief` via `generate_simulation_brief` FunctionTool
    - Implementation: `src/mdzen/agents/clarification_agent.py`
 
@@ -151,8 +151,9 @@ mdzen/
 │   ├── workflow.py                 # Workflow step definitions (single source of truth)
 │   └── utils.py                    # Utilities
 │
-├── servers/               # FastMCP servers (5 servers)
-│   ├── structure_server.py         # PDB fetch, clean, parameterize
+├── servers/               # FastMCP servers (6 servers)
+│   ├── research_server.py          # PDB/AlphaFold/UniProt retrieval, structure inspection
+│   ├── structure_server.py         # Structure cleaning, ligand parameterization
 │   ├── genesis_server.py           # Boltz-2 structure prediction
 │   ├── solvation_server.py         # Solvent/membrane embedding
 │   ├── amber_server.py             # Amber topology generation
@@ -169,26 +170,31 @@ mdzen/
 
 ### FastMCP Servers
 
-The system uses **5 independent FastMCP servers**, each providing specialized MD preparation tools:
+The system uses **6 independent FastMCP servers**, each providing specialized MD preparation tools:
 
-1. **structure_server.py** - Structure acquisition and preparation
-   - `fetch_molecules()`: Download from PDB/AlphaFold/PDB-REDO
-   - `inspect_molecules()`: Analyze structure, classify chains
+1. **research_server.py** - External database integration (mirrors Augmented-Nature MCP servers)
+   - `download_structure()`: Download from RCSB PDB
+   - `get_alphafold_structure()`: Get predicted structure from AlphaFold DB
+   - `inspect_molecules()`: Analyze structure, classify chains (gemmi-based)
+   - `search_proteins()`: Search UniProt database
+   - `get_protein_info()`: Get protein details from UniProt
+
+2. **structure_server.py** - Structure preparation and parameterization
    - `clean_protein()`: PDBFixer + protonation + pdb4amber
    - `clean_ligand()`: Template matching + geometry optimization
    - `run_antechamber_robust()`: GAFF2 + AM1-BCC parameterization
    - `prepare_complex()`: All-in-one preparation pipeline
 
-2. **genesis_server.py** - AI structure prediction
+3. **genesis_server.py** - AI structure prediction
    - Boltz-2 integration for FASTA → PDB conversion
 
-3. **solvation_server.py** - Solvation and membrane setup
+4. **solvation_server.py** - Solvation and membrane setup
    - packmol-memgen for solvent/membrane embedding
 
-4. **amber_server.py** - Topology generation
+5. **amber_server.py** - Topology generation
    - tleap for prmtop and inpcrd file generation
 
-5. **md_simulation_server.py** - MD execution
+6. **md_simulation_server.py** - MD execution
    - OpenMM simulation and trajectory analysis
 
 Each server is **independently testable** using `mcp dev servers/<server_name>.py`.
@@ -286,8 +292,8 @@ STEP_CONFIG = {
     "prepare_complex": {
         "tool": "prepare_complex",
         "inputs": "Requires: PDB ID or structure file",
-        "servers": ["structure", "genesis"],
-        "allowed_tools": ["prepare_complex", "fetch_molecules", "predict_structure"],
+        "servers": ["research", "structure", "genesis"],
+        "allowed_tools": ["prepare_complex", "download_structure", "get_alphafold_structure", "predict_structure"],
         "estimate": "1-5 minutes",
     },
     # ... other steps

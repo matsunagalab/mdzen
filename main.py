@@ -242,8 +242,8 @@ async def _run_interactive(session_service, session_id: str, request: str):
             if simulation_brief:
                 if isinstance(simulation_brief, dict):
                     display_simulation_brief(simulation_brief, console)
-                else:
-                    console.print(str(simulation_brief))
+                # Note: If simulation_brief is a string (agent's response), don't print it again
+                # as it was already printed by run_agent_with_events
 
                 console.print("\n[yellow]Options:[/yellow]")
                 console.print("  - Type 'continue' or 'yes' to proceed to Setup phase")
@@ -340,7 +340,8 @@ def list_servers():
     table.add_column("Description", style="green")
 
     servers = [
-        ("structure_server", "PDB retrieval, structure repair, ligand GAFF2 parameterization"),
+        ("research_server", "PDB/AlphaFold/UniProt retrieval and structure inspection"),
+        ("structure_server", "Structure repair, ligand GAFF2 parameterization"),
         ("genesis_server", "Boltz-2 structure prediction from FASTA sequences"),
         ("solvation_server", "Solvation (water box) and membrane embedding via packmol-memgen"),
         ("amber_server", "Amber topology (parm7) and coordinate (rst7) generation via tleap"),

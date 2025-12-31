@@ -1,6 +1,6 @@
 """MCP Toolset configuration for MDZen.
 
-This module configures McpToolset instances for all 5 MCP servers
+This module configures McpToolset instances for all 6 MCP servers
 using ADK's native MCP integration.
 """
 
@@ -67,14 +67,14 @@ def _create_toolset(server_name: str, tool_filter: list[str] | None = None) -> M
 
 
 def create_mcp_toolsets() -> dict[str, McpToolset]:
-    """Create McpToolset instances for all 5 MCP servers.
+    """Create McpToolset instances for all 6 MCP servers.
 
     Each server is configured with stdio transport for local execution.
 
     Returns:
         Dictionary mapping server names to McpToolset instances
     """
-    server_names = ["structure", "genesis", "solvation", "amber", "md_simulation"]
+    server_names = ["research", "structure", "genesis", "solvation", "amber", "md_simulation"]
     return {name: _create_toolset(name) for name in server_names}
 
 
@@ -123,15 +123,22 @@ def get_step_tools(step: str) -> list[McpToolset]:
 def get_clarification_tools() -> list[McpToolset]:
     """Get tools for clarification phase.
 
-    Returns only structure inspection tools for Phase 1.
+    Returns research tools for Phase 1 (PDB/AlphaFold/UniProt retrieval and inspection).
 
     Returns:
         List of McpToolset instances with filtered tools
     """
     return [
         create_filtered_toolset(
-            "structure",
-            tool_filter=["fetch_molecules", "inspect_molecules"],
+            "research",
+            tool_filter=[
+                "get_structure_info",  # PDB metadata with UniProt cross-refs
+                "get_protein_info",  # UniProt biological info (subunit, function)
+                "download_structure",
+                "get_alphafold_structure",
+                "inspect_molecules",
+                "search_proteins",
+            ],
         )
     ]
 

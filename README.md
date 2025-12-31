@@ -12,12 +12,12 @@ An AI agent system specialized for Amber-based MD input file generation. Built w
   - Persistent sessions for pause/resume capability
   - **Step-specific tool loading** for reduced token usage (Best Practice #3)
 - **ReAct Pattern**: Phase 1 pre-inspects PDB structures before generating appropriate questions
-  - Analyze structures with `fetch_molecules`/`inspect_molecules` tools
+  - Analyze structures with `download_structure`/`inspect_molecules` tools
   - Auto-detect multi-chain structures and ligand presence
   - Simple single-chain proteins proceed automatically
 - **Boltz-2 Integration**: High-accuracy structure prediction and binding affinity prediction from FASTA/SMILES
 - **AmberTools Complete**: No external QM software required for ligand parameterization (AM1-BCC charge calculation)
-- **FastMCP Integration**: Modular 5 independent servers, type-safe automatic schema generation
+- **FastMCP Integration**: Modular 6 independent servers, type-safe automatic schema generation
 - **OpenMM Dedicated**: Python-programmable production-ready script generation
 
 ## Documentation

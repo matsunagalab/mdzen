@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     max_message_history: int = 6
 
     # Server paths (relative to project root)
+    research_server_path: str = "servers/research_server.py"
     structure_server_path: str = "servers/structure_server.py"
     genesis_server_path: str = "servers/genesis_server.py"
     solvation_server_path: str = "servers/solvation_server.py"
@@ -77,12 +78,13 @@ def get_server_path(server_name: str) -> str:
     """Get the path to a server script.
 
     Args:
-        server_name: Server name ("structure", "genesis", "solvation", "amber", "md_simulation")
+        server_name: Server name ("research", "structure", "genesis", "solvation", "amber", "md_simulation")
 
     Returns:
         Relative path to server script
     """
     server_map = {
+        "research": settings.research_server_path,
         "structure": settings.structure_server_path,
         "genesis": settings.genesis_server_path,
         "solvation": settings.solvation_server_path,
@@ -126,7 +128,7 @@ def get_timeout(timeout_type: str) -> int:
     Single source of truth for all timeout configuration.
 
     Args:
-        timeout_type: One of "default", "structure", "genesis", "solvation",
+        timeout_type: One of "default", "research", "structure", "genesis", "solvation",
                      "membrane", "amber", "md_simulation"
 
     Returns:
@@ -134,6 +136,7 @@ def get_timeout(timeout_type: str) -> int:
     """
     timeout_map = {
         "default": settings.default_timeout,
+        "research": settings.default_timeout,
         "structure": settings.default_timeout,
         "genesis": settings.default_timeout,
         "solvation": settings.solvation_timeout,

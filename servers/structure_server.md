@@ -2,22 +2,25 @@
 
 本ドキュメントは `structure_server.py` に実装されているMCPツール関数について、開発者向けの実装詳細と研究者向けの計算手法を説明します。
 
+> **Note**: 構造ファイルの取得（`download_structure`, `get_alphafold_structure`）と解析（`inspect_molecules`）機能は
+> `research_server.py` に移行されました。詳細は `servers/research_server.py` を参照してください。
+
 ---
 
 ## 目次
 
-1. [fetch_molecules](#1-fetch_molecules)
-2. [inspect_molecules](#2-inspect_molecules)
-3. [split_molecules](#3-split_molecules)
-4. [clean_protein](#4-clean_protein)
-5. [clean_ligand](#5-clean_ligand)
-6. [run_antechamber_robust](#6-run_antechamber_robust)
-7. [prepare_complex](#7-prepare_complex)
-8. [create_mutated_structutre](#8-create_mutated_structutre)
+1. [split_molecules](#1-split_molecules)
+2. [clean_protein](#2-clean_protein)
+3. [clean_ligand](#3-clean_ligand)
+4. [run_antechamber_robust](#4-run_antechamber_robust)
+5. [prepare_complex](#5-prepare_complex)
+6. [create_mutated_structure](#6-create_mutated_structure)
 
 ---
 
-## 1. fetch_molecules
+## (Deprecated) fetch_molecules
+
+> **移行先**: `research_server.py` の `download_structure` および `get_alphafold_structure`
 
 **概要**: PDB、AlphaFold、PDB-REDOからタンパク質構造ファイルを取得する
 
@@ -64,7 +67,9 @@
 
 ---
 
-## 2. inspect_molecules
+## (Deprecated) inspect_molecules
+
+> **移行先**: `research_server.py` の `inspect_molecules`
 
 **概要**: mmCIF/PDBファイルの分子構成を解析し、チェーン情報を返す
 
@@ -127,7 +132,7 @@
 
 ---
 
-## 3. split_molecules
+## 1. split_molecules
 
 **概要**: 構造ファイルを分子種別ごとに個別のPDBファイルに分割する
 
@@ -181,7 +186,7 @@ mmCIF形式のlabel_asym_idを使用することで、26チェーン以上の大
 
 ---
 
-## 4. clean_protein
+## 2. clean_protein
 
 **概要**: タンパク質構造をMDシミュレーション用に前処理する
 
@@ -269,7 +274,7 @@ pHに基づいて以下の残基のプロトネーション状態を決定：
 
 ---
 
-## 5. clean_ligand
+## 3. clean_ligand
 
 **概要**: リガンド構造を結合次数・プロトネーション状態を正確に設定して前処理する
 
@@ -360,7 +365,7 @@ PDBファイルは結合次数情報を持たないため、以下の手法で�
 
 ---
 
-## 6. run_antechamber_robust
+## 4. run_antechamber_robust
 
 **概要**: Antechamberを使用してリガンドのGAFF/GAFF2力場パラメータを生成する
 
@@ -444,7 +449,7 @@ PDBファイルは結合次数情報を持たないため、以下の手法で�
 
 ---
 
-## 7. prepare_complex
+## 5. prepare_complex
 
 **概要**: タンパク質-リガンド複合体の完全な前処理ワークフローを一括実行
 
@@ -523,7 +528,7 @@ output_dir/
 
 ---
 
-## 8. create_mutated_structutre
+## 6. create_mutated_structure
 
 **概要**: タンパク質構造に点変異を導入する
 

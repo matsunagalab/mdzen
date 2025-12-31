@@ -57,9 +57,16 @@ def extract_text_from_content(content: Any) -> str:
     # Try to extract from parts
     if hasattr(content, "parts"):
         texts = []
-        for part in content.parts:
+        seen_texts: set[str] = set()  # Deduplicate parts with same content
+        for i, part in enumerate(content.parts):
             if hasattr(part, "text") and part.text:
+                # Skip duplicate text parts
+                if part.text in seen_texts:
+                    continue
+                seen_texts.add(part.text)
                 texts.append(part.text)
+        # Debug: show number of unique parts
+        # print(f"DEBUG: {len(texts)} unique text parts from {len(list(content.parts))} parts")
         return "\n".join(texts)
 
     # Fallback to string representation
@@ -88,6 +95,7 @@ async def run_agent_with_events(
         Number of events processed
     """
     event_count = 0
+    last_printed_text: str | None = None  # Track last printed response for dedup
 
     async for event in runner.run_async(
         user_id=DEFAULT_USER,
@@ -104,6 +112,10 @@ async def run_agent_with_events(
             if event.is_final_response():
                 text = extract_text_from_content(event.content)
                 if text:
+                    # Skip duplicate responses (ADK may emit from both sub-agent and parent)
+                    if text == last_printed_text:
+                        continue
+                    last_printed_text = text
                     console.print(f"\n[green]Agent:[/green]\n{text}\n")
             elif show_progress and hasattr(event, "content") and event.content:
                 text = extract_text_from_content(event.content)

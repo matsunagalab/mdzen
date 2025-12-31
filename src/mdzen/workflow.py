@@ -30,8 +30,8 @@ STEP_CONFIG: dict[str, StepConfig] = {
     "prepare_complex": {
         "tool": "prepare_complex",
         "inputs": "Requires: PDB ID or structure file",
-        "servers": ["structure", "genesis"],
-        "allowed_tools": ["prepare_complex", "fetch_molecules", "predict_structure"],
+        "servers": ["research", "structure", "genesis"],
+        "allowed_tools": ["prepare_complex", "download_structure", "get_alphafold_structure", "predict_structure"],
         "estimate": "1-5 minutes",
     },
     "solvate": {

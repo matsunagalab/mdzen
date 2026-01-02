@@ -1117,10 +1117,10 @@ if __name__ == "__main__":
     args = _parse_args()
     if args.http:
         # Streamable HTTP transport (recommended) - endpoint at /mcp
-        mcp.run(transport="streamable-http", port=args.port)
+        mcp.run(transport="http", host="0.0.0.0", port=args.port)
     elif args.sse:
         # SSE transport (deprecated) - endpoint at /sse
-        mcp.run(transport="sse", port=args.port)
+        mcp.run(transport="sse", host="0.0.0.0", port=args.port)
     else:
         mcp.run()
 

@@ -2,17 +2,36 @@
 
 This module configures McpToolset instances for all 6 MCP servers
 using ADK's native MCP integration.
+
+Supports two transport modes:
+- stdio: Default for CLI (subprocess-based)
+- http: For Colab/Jupyter (HTTP-based, requires servers running with --http flag)
+  - Streamable HTTP (/mcp endpoint) - recommended, current MCP standard
+  - SSE (/sse endpoint) - deprecated, for backwards compatibility
 """
 
 import sys
 from pathlib import Path
 
 from google.adk.tools.mcp_tool import McpToolset
-from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
+from google.adk.tools.mcp_tool.mcp_session_manager import (
+    StdioConnectionParams,
+    SseConnectionParams,
+)
 from mcp import StdioServerParameters
 
 from mdzen.config import get_server_path, get_timeout
 from mdzen.workflow import STEP_CONFIG
+
+# SSE port mapping for each server
+SSE_PORT_MAP = {
+    "research": 8001,
+    "structure": 8002,
+    "genesis": 8003,
+    "solvation": 8004,
+    "amber": 8005,
+    "md_simulation": 8006,
+}
 
 # Cache for project root
 _project_root: Path | None = None
@@ -170,3 +189,137 @@ async def close_toolsets(toolsets: list[McpToolset]) -> None:
         except Exception:
             # Ignore errors during cleanup
             pass
+
+
+# =============================================================================
+# HTTP Transport Functions (for Colab/Jupyter)
+# =============================================================================
+
+# Port mapping for each server (used by both SSE and Streamable HTTP)
+HTTP_PORT_MAP = SSE_PORT_MAP  # Alias for clarity
+
+
+def create_http_toolset(
+    server_name: str,
+    tool_filter: list[str] | None = None,
+    host: str = "localhost",
+    use_streamable_http: bool = True,
+) -> McpToolset:
+    """Create a McpToolset using HTTP transport (for Colab/Jupyter).
+
+    Requires the MCP server to be running with --http flag (Streamable HTTP)
+    or --sse flag (deprecated SSE transport).
+
+    Args:
+        server_name: Name of the server (research, structure, etc.)
+        tool_filter: List of tool names to include (None = all tools)
+        host: Hostname where HTTP server is running (default: localhost)
+        use_streamable_http: If True, use /mcp endpoint (recommended).
+                            If False, use /sse endpoint (deprecated).
+
+    Returns:
+        Configured McpToolset instance using HTTP transport
+    """
+    port = HTTP_PORT_MAP.get(server_name, 8000)
+    # Streamable HTTP uses /mcp, deprecated SSE uses /sse
+    endpoint = "/mcp" if use_streamable_http else "/sse"
+
+    return McpToolset(
+        connection_params=SseConnectionParams(
+            url=f"http://{host}:{port}{endpoint}",
+        ),
+        tool_filter=tool_filter,
+    )
+
+
+# Backwards compatibility alias
+def create_sse_toolset(
+    server_name: str,
+    tool_filter: list[str] | None = None,
+    host: str = "localhost",
+) -> McpToolset:
+    """Create a McpToolset using SSE transport (deprecated).
+
+    Use create_http_toolset() with use_streamable_http=True instead.
+    """
+    return create_http_toolset(
+        server_name, tool_filter, host, use_streamable_http=False
+    )
+
+
+def get_clarification_tools_sse(host: str = "localhost") -> list[McpToolset]:
+    """Get clarification tools using HTTP transport (for Colab/Jupyter).
+
+    Returns research tools for Phase 1 (PDB/AlphaFold/UniProt retrieval).
+    Requires research_server to be running with --http --port 8001.
+
+    Note: Function name kept for backwards compatibility. Uses Streamable HTTP
+    transport (/mcp endpoint) by default, which is the current MCP standard.
+
+    Args:
+        host: Hostname where HTTP server is running (default: localhost)
+
+    Returns:
+        List of McpToolset instances with filtered tools
+    """
+    return [
+        create_http_toolset(
+            "research",
+            tool_filter=[
+                "get_structure_info",
+                "get_protein_info",
+                "download_structure",
+                "get_alphafold_structure",
+                "inspect_molecules",
+                "search_proteins",
+            ],
+            host=host,
+            use_streamable_http=True,
+        )
+    ]
+
+
+def get_setup_tools_sse(host: str = "localhost") -> list[McpToolset]:
+    """Get all tools for setup phase using HTTP transport (for Colab/Jupyter).
+
+    Returns all MCP toolsets for Phase 2 workflow.
+    Requires all MCP servers to be running with --http flag.
+
+    Note: Function name kept for backwards compatibility. Uses Streamable HTTP
+    transport (/mcp endpoint) by default.
+
+    Args:
+        host: Hostname where HTTP servers are running (default: localhost)
+
+    Returns:
+        List of all McpToolset instances using HTTP transport
+    """
+    server_names = ["research", "structure", "genesis", "solvation", "amber", "md_simulation"]
+    return [create_http_toolset(name, host=host, use_streamable_http=True) for name in server_names]
+
+
+def get_step_tools_sse(step: str, host: str = "localhost") -> list[McpToolset]:
+    """Get MCP toolsets for a specific workflow step using HTTP transport.
+
+    Creates only the toolsets needed for the given step, reducing
+    token consumption and preventing tool selection errors.
+
+    Note: Function name kept for backwards compatibility. Uses Streamable HTTP
+    transport (/mcp endpoint) by default.
+
+    Args:
+        step: Step name ("prepare_complex", "solvate", "build_topology", "run_simulation")
+        host: Hostname where HTTP servers are running (default: localhost)
+
+    Returns:
+        List of McpToolset instances for the step using HTTP transport
+
+    Raises:
+        ValueError: If step name is not recognized
+    """
+    if step not in STEP_CONFIG:
+        valid_steps = list(STEP_CONFIG.keys())
+        raise ValueError(f"Unknown step '{step}'. Valid steps: {valid_steps}")
+
+    server_names = STEP_CONFIG[step]["servers"]
+    return [create_http_toolset(name, host=host, use_streamable_http=True) for name in server_names]

@@ -3313,5 +3313,23 @@ def generate_structure(sequence: list, mutated_sequence: list, input_pdb: str) -
     
     return pdb_output
 
+def _parse_args():
+    """Parse command line arguments for server mode."""
+    import argparse
+    parser = argparse.ArgumentParser(description="Structure MCP Server")
+    parser.add_argument("--http", action="store_true", help="Run in Streamable HTTP mode")
+    parser.add_argument("--sse", action="store_true", help="Run in SSE mode (deprecated)")
+    parser.add_argument("--port", type=int, default=8002, help="Port for HTTP mode")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    mcp.run()
+    args = _parse_args()
+    if args.http:
+        # Streamable HTTP transport (recommended) - endpoint at /mcp
+        mcp.run(transport="streamable-http", port=args.port)
+    elif args.sse:
+        # SSE transport (deprecated) - endpoint at /sse
+        mcp.run(transport="sse", port=args.port)
+    else:
+        mcp.run()

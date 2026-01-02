@@ -4,6 +4,8 @@ This agent handles user interaction to gather MD simulation requirements
 and generates a structured SimulationBrief.
 """
 
+from typing import Literal
+
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools.function_tool import FunctionTool
@@ -11,11 +13,14 @@ from google.adk.tools.mcp_tool import McpToolset
 
 from mdzen.config import get_litellm_model
 from mdzen.prompts import get_clarification_instruction
-from mdzen.tools.mcp_setup import get_clarification_tools
+from mdzen.tools.mcp_setup import get_clarification_tools, get_clarification_tools_sse
 from mdzen.tools.custom_tools import generate_simulation_brief, get_session_dir
 
 
-def create_clarification_agent() -> tuple[LlmAgent, list[McpToolset]]:
+def create_clarification_agent(
+    transport: Literal["stdio", "sse", "http"] = "stdio",
+    sse_host: str = "localhost",
+) -> tuple[LlmAgent, list[McpToolset]]:
     """Create the Phase 1 clarification agent.
 
     This agent:
@@ -25,11 +30,20 @@ def create_clarification_agent() -> tuple[LlmAgent, list[McpToolset]]:
     4. Generates SimulationBrief via generate_simulation_brief tool
     5. Saves result to session.state["simulation_brief"] via output_key
 
+    Args:
+        transport: MCP transport mode:
+            - "stdio": subprocess-based (default, for CLI)
+            - "sse" or "http": HTTP-based using Streamable HTTP /mcp endpoint (for Colab)
+        sse_host: Hostname for HTTP servers (only used when transport="sse" or "http")
+
     Returns:
         Tuple of (LlmAgent, list of McpToolset instances to close after use)
     """
-    # Get MCP tools for structure inspection
-    mcp_tools = get_clarification_tools()
+    # Get MCP tools for structure inspection based on transport mode
+    if transport in ("sse", "http"):
+        mcp_tools = get_clarification_tools_sse(host=sse_host)
+    else:
+        mcp_tools = get_clarification_tools()
 
     # Create FunctionTools for session management and brief generation
     get_session_dir_tool = FunctionTool(get_session_dir)

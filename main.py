@@ -64,26 +64,17 @@ def run(
     """
     import os
     import sys
-    import warnings
 
-    # Suppress async generator finalization errors from MCP's stdio_client
-    # These occur when Python tries to close async generators in a different
-    # task context than they were created in.
-    def _silent_asyncgen_finalizer(agen):
-        try:
-            agen.aclose()
-        except Exception:
-            pass
+    # Disable async generator finalization to prevent MCP stdio_client errors.
+    # These errors occur when Python tries to close async generators in a different
+    # task context than they were created in. They're harmless but noisy.
+    # Setting firstiter=None and finalizer=None disables the hooks entirely.
+    sys.set_asyncgen_hooks(firstiter=None, finalizer=None)
 
-    # Set custom hooks to suppress errors during async generator cleanup
-    old_hooks = sys.get_asyncgen_hooks()
-    sys.set_asyncgen_hooks(finalizer=_silent_asyncgen_finalizer)
+    asyncio.run(_run_async(request, print_mode, resume))
 
-    try:
-        asyncio.run(_run_async(request, print_mode, resume))
-    finally:
-        # Force exit to avoid any remaining cleanup issues
-        os._exit(0)
+    # Force exit to skip any remaining cleanup
+    os._exit(0)
 
 
 async def _run_async(

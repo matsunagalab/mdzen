@@ -1,0 +1,23 @@
+# Amber Server - tleap script
+# Job ID: 2a8a84df
+# Solvent type: explicit
+
+# Load force fields
+source leaprc.protein.ff19SB
+source leaprc.gaff2
+source leaprc.water.tip3p
+loadamberparams frcmod.ionsjc_tip3p
+
+# Load structure
+mol = loadpdb /Users/yasu/tmp/mdzen/job_21e596d4/amber/system_input.pdb
+
+# Set periodic box
+set mol box {71.840 71.840 71.840}
+
+# Check structure
+check mol
+
+# Save Amber files
+saveamberparm mol /Users/yasu/tmp/mdzen/job_21e596d4/amber/system.parm7 /Users/yasu/tmp/mdzen/job_21e596d4/amber/system.rst7
+
+quit

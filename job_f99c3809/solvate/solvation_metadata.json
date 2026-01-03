@@ -1,0 +1,30 @@
+{
+  "success": true,
+  "job_id": "7e068b16",
+  "output_file": "/Users/yasu/tmp/mdzen/job_f99c3809/solvate/solvated.pdb",
+  "output_dir": "/Users/yasu/tmp/mdzen/job_f99c3809/solvate",
+  "input_file": "/Users/yasu/tmp/mdzen/job_f99c3809/merge/merged.pdb",
+  "parameters": {
+    "dist": 12.0,
+    "cubic": true,
+    "salt": true,
+    "salt_c": "Na+",
+    "salt_a": "Cl-",
+    "saltcon": 0.15
+  },
+  "packmol_log": "/Users/yasu/tmp/mdzen/job_f99c3809/solvate/solvated_packmol.log",
+  "statistics": {
+    "total_atoms": 39725
+  },
+  "errors": [],
+  "warnings": [],
+  "box_dimensions": {
+    "box_a": 71.84,
+    "box_b": 71.84,
+    "box_c": 71.84,
+    "alpha": 90.0,
+    "beta": 90.0,
+    "gamma": 90.0,
+    "is_cubic": true
+  }
+}

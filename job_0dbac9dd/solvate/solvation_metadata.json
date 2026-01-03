@@ -1,0 +1,21 @@
+{
+  "success": false,
+  "job_id": "9f490d39",
+  "output_file": null,
+  "output_dir": "/Users/yasu/tmp/mdzen/job_0dbac9dd/solvate",
+  "input_file": "/Users/yasu/tmp/mdzen/job_0dbac9dd/merge/merged.pdb",
+  "parameters": {
+    "dist": 12.0,
+    "cubic": true,
+    "salt": true,
+    "salt_c": "Na+",
+    "salt_a": "Cl-",
+    "saltcon": 0.15
+  },
+  "packmol_log": null,
+  "statistics": {},
+  "errors": [
+    "Error during solvation: CalledProcessError: Command '['packmol-memgen', '--solvate', '--dist', '12.0', '--pdb', '/Users/yasu/tmp/mdzen/job_0dbac9dd/solvate/merged.pdb', '-o', '/Users/yasu/tmp/mdzen/job_0dbac9dd/solvate/solvated.pdb', '--packlog', '/Users/yasu/tmp/mdzen/job_0dbac9dd/solvate/solvated_packmol', '--cubic', '--salt', '--salt_c', 'Na+', '--salt_a', 'Cl-', '--saltcon', '0.15', '--overwrite', '--notprotonate', '--preoriented', '--keepligs', '--packmol', '/Users/yasu/miniconda3/envs/mdzen/bin/packmol']' returned non-zero exit status 1."
+  ],
+  "warnings": []
+}

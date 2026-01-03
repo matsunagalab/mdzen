@@ -1,0 +1,161 @@
+{
+  "success": false,
+  "job_id": "4a369a28",
+  "output_dir": "/Users/yasu/tmp/mdzen/job_21e596d4/split",
+  "source_file": "/Users/yasu/tmp/mdzen/job_21e596d4/1AKE.pdb",
+  "file_format": "pdb",
+  "protein_files": [
+    "/Users/yasu/tmp/mdzen/job_21e596d4/split/protein_1.pdb"
+  ],
+  "ligand_files": [],
+  "ion_files": [],
+  "water_files": [],
+  "all_chains": [
+    {
+      "chain_id": "Axp",
+      "author_chain": "A",
+      "entity_id": "A",
+      "entity_name": null,
+      "chain_type": "protein",
+      "is_protein": true,
+      "is_water": false,
+      "num_residues": 214,
+      "num_atoms": 1661,
+      "residue_names": {
+        "unique_residues": [
+          "ALA",
+          "ARG",
+          "ASN",
+          "ASP",
+          "CYS",
+          "GLN",
+          "GLU",
+          "GLY",
+          "HIS",
+          "ILE"
+        ],
+        "total_unique_count": 19,
+        "truncated": true
+      },
+      "sequence_length": 214
+    },
+    {
+      "chain_id": "Bxp",
+      "author_chain": "B",
+      "entity_id": "A",
+      "entity_name": null,
+      "chain_type": "protein",
+      "is_protein": true,
+      "is_water": false,
+      "num_residues": 214,
+      "num_atoms": 1656,
+      "residue_names": {
+        "unique_residues": [
+          "ALA",
+          "ARG",
+          "ASN",
+          "ASP",
+          "CYS",
+          "GLN",
+          "GLU",
+          "GLY",
+          "HIS",
+          "ILE"
+        ],
+        "total_unique_count": 19,
+        "truncated": true
+      },
+      "sequence_length": 214
+    },
+    {
+      "chain_id": "Ax1",
+      "author_chain": "A",
+      "entity_id": "AP5!",
+      "entity_name": null,
+      "chain_type": "ligand",
+      "is_protein": false,
+      "is_water": false,
+      "num_residues": 1,
+      "num_atoms": 64,
+      "residue_names": {
+        "unique_residues": [
+          "AP5"
+        ],
+        "total_unique_count": 1,
+        "truncated": false
+      },
+      "sequence_length": 0
+    },
+    {
+      "chain_id": "Bx1",
+      "author_chain": "B",
+      "entity_id": "AP5!",
+      "entity_name": null,
+      "chain_type": "ligand",
+      "is_protein": false,
+      "is_water": false,
+      "num_residues": 1,
+      "num_atoms": 57,
+      "residue_names": {
+        "unique_residues": [
+          "AP5"
+        ],
+        "total_unique_count": 1,
+        "truncated": false
+      },
+      "sequence_length": 0
+    },
+    {
+      "chain_id": "Axw",
+      "author_chain": "A",
+      "entity_id": "water",
+      "entity_name": null,
+      "chain_type": "water",
+      "is_protein": false,
+      "is_water": true,
+      "num_residues": 241,
+      "num_atoms": 241,
+      "residue_names": {
+        "unique_residues": [
+          "HOH"
+        ],
+        "total_unique_count": 1,
+        "truncated": false
+      },
+      "sequence_length": 0
+    },
+    {
+      "chain_id": "Bxw",
+      "author_chain": "B",
+      "entity_id": "water",
+      "entity_name": null,
+      "chain_type": "water",
+      "is_protein": false,
+      "is_water": true,
+      "num_residues": 137,
+      "num_atoms": 137,
+      "residue_names": {
+        "unique_residues": [
+          "HOH"
+        ],
+        "total_unique_count": 1,
+        "truncated": false
+      },
+      "sequence_length": 0
+    }
+  ],
+  "chain_file_info": [
+    {
+      "chain_id": "Axp",
+      "author_chain": "A",
+      "chain_type": "protein",
+      "file": "/Users/yasu/tmp/mdzen/job_21e596d4/split/protein_1.pdb",
+      "residue_count": 214
+    }
+  ],
+  "include_types": [
+    "protein"
+  ],
+  "errors": [],
+  "warnings": []
+}

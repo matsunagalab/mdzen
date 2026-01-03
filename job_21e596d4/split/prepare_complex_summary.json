@@ -1,0 +1,85 @@
+{
+  "success": true,
+  "job_id": "385cc247",
+  "output_dir": "/Users/yasu/tmp/mdzen/job_21e596d4/split",
+  "source_file": "/Users/yasu/tmp/mdzen/job_21e596d4/1AKE.pdb",
+  "inspection": {
+    "success": true,
+    "summary": {
+      "num_protein_chains": 2,
+      "num_ligand_chains": 2,
+      "num_water_chains": 2,
+      "num_ion_chains": 0,
+      "total_chains": 6,
+      "protein_chain_ids": [
+        "Axp",
+        "Bxp"
+      ],
+      "ligand_chain_ids": [
+        "Ax1",
+        "Bx1"
+      ],
+      "water_chain_ids": [
+        "Axw",
+        "Bxw"
+      ],
+      "ion_chain_ids": []
+    },
+    "header": {
+      "pdb_id": "1AKE",
+      "title": "STRUCTURE OF THE COMPLEX BETWEEN ADENYLATE KINASE FROM ESCHERICHIA COLI AND THE INHIBITOR AP5A REFINED AT 1.9 ANGSTROMS RESOLUTION: A MODEL FOR A CATALYTIC TRANSITION STATE",
+      "resolution": 2.0,
+      "spacegroup": "P 21 2 21",
+      "experiment_method": "X-RAY DIFFRACTION"
+    },
+    "errors": [],
+    "warnings": []
+  },
+  "split": {
+    "success": true,
+    "protein_files": [
+      "/Users/yasu/tmp/mdzen/job_21e596d4/split/protein_1.pdb"
+    ],
+    "ligand_files": [],
+    "ion_files": [],
+    "water_files": [],
+    "chain_file_info": [
+      {
+        "chain_id": "Axp",
+        "author_chain": "A",
+        "chain_type": "protein",
+        "file": "/Users/yasu/tmp/mdzen/job_21e596d4/split/protein_1.pdb",
+        "residue_count": 214
+      }
+    ]
+  },
+  "proteins": [
+    {
+      "chain_id": "Axp",
+      "input_file": "/Users/yasu/tmp/mdzen/job_21e596d4/split/protein_1.pdb",
+      "output_file": "/Users/yasu/tmp/mdzen/job_21e596d4/split/protein_1.amber.pdb",
+      "success": true,
+      "statistics": {
+        "initial_chains": 1,
+        "initial_residues": 214,
+        "final_residues": 214,
+        "final_atoms": 3341
+      },
+      "errors": []
+    }
+  ],
+  "ligands": [],
+  "errors": [],
+  "warnings": [],
+  "merged_pdb": "/Users/yasu/tmp/mdzen/job_21e596d4/merge/merged.pdb",
+  "merge_result": {
+    "success": true,
+    "output_file": "/Users/yasu/tmp/mdzen/job_21e596d4/merge/merged.pdb",
+    "statistics": {
+      "total_atoms": 3339,
+      "total_residues": 214,
+      "total_chains": 1,
+      "input_file_count": 1
+    }
+  }
+}

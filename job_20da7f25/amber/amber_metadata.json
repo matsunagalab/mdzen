@@ -1,0 +1,41 @@
+{
+  "success": true,
+  "job_id": "bd55a74a",
+  "output_dir": "/Users/yasu/tmp/mdzen/job_20da7f25/amber",
+  "parm7": "/Users/yasu/tmp/mdzen/job_20da7f25/amber/system.parm7",
+  "rst7": "/Users/yasu/tmp/mdzen/job_20da7f25/amber/system.rst7",
+  "leap_log": "/Users/yasu/tmp/mdzen/job_20da7f25/amber/system.leap.log",
+  "leap_script": "/Users/yasu/tmp/mdzen/job_20da7f25/amber/system.leap.in",
+  "solvent_type": "explicit",
+  "parameters": {
+    "forcefield": "ff19SB",
+    "water_model": "tip3p",
+    "box_dimensions": {
+      "box_a": 71.88,
+      "box_b": 71.88,
+      "box_c": 71.88,
+      "alpha": 90.0,
+      "beta": 90.0,
+      "gamma": 90.0
+    },
+    "is_membrane": false,
+    "ligand_count": 0
+  },
+  "statistics": {
+    "num_atoms": null,
+    "num_residues": null
+  },
+  "errors": [],
+  "warnings": [
+    "/Users/yasu/miniconda3/envs/mdzen/bin/teLeap: Warning!",
+    "/Users/yasu/miniconda3/envs/mdzen/bin/teLeap: Warning!",
+    "/Users/yasu/miniconda3/envs/mdzen/bin/teLeap: Warning!",
+    "/Users/yasu/miniconda3/envs/mdzen/bin/teLeap: Warning!",
+    "/Users/yasu/miniconda3/envs/mdzen/bin/teLeap: Warning!",
+    "/Users/yasu/miniconda3/envs/mdzen/bin/teLeap: Warning!",
+    "/Users/yasu/miniconda3/envs/mdzen/bin/teLeap: Warning!",
+    "/Users/yasu/miniconda3/envs/mdzen/bin/teLeap: Warning!",
+    "check:  Warnings: 8",
+    "Exiting LEaP: Errors = 0; Warnings = 8; Notes = 0."
+  ]
+}

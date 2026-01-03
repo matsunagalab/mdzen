@@ -175,7 +175,7 @@ def get_setup_tools() -> list[McpToolset]:
     return list(toolsets.values())
 
 
-async def close_toolsets(toolsets: list[McpToolset]) -> None:
+async def close_toolsets(toolsets: list[McpToolset], timeout: float = 5.0) -> None:
     """Close all MCP toolsets to release resources.
 
     Should be called after the Runner completes to prevent
@@ -183,13 +183,28 @@ async def close_toolsets(toolsets: list[McpToolset]) -> None:
 
     Args:
         toolsets: List of McpToolset instances to close
+        timeout: Maximum time to wait for each toolset to close (seconds)
     """
+    import asyncio
+    import warnings
+
     for toolset in toolsets:
         try:
-            await toolset.close()
-        except Exception:
-            # Ignore errors during cleanup
-            pass
+            # Use wait_for with timeout to prevent hanging
+            await asyncio.wait_for(toolset.close(), timeout=timeout)
+        except asyncio.TimeoutError:
+            warnings.warn(
+                f"Timeout closing MCP toolset after {timeout}s",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        except Exception as e:
+            # Log but don't raise during cleanup
+            warnings.warn(
+                f"Error during MCP session cleanup for stdio_session: {e}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
 
 # =============================================================================

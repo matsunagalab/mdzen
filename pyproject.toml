@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     # MCP Server (FastMCP)
-    "fastmcp>=2.0.0",
+    # Note: fastmcp 2.x has pydocket dep that conflicts with google-adk's opentelemetry pins
+    "fastmcp>=1.0,<2.0",
     "mcp[cli]>=1.18.0",
 
     # Google Agent Development Kit (ADK)

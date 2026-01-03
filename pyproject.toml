@@ -6,12 +6,23 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     # MCP Server (FastMCP)
-    "fastmcp>=0.1.0",
+    "fastmcp>=2.0.0",
     "mcp[cli]>=1.18.0",
 
     # Google Agent Development Kit (ADK)
-    "google-adk>=0.2.0",
-    "litellm>=1.0.0",
+    "google-adk>=0.5.0",
+    "litellm>=1.50.0,<2.0.0",
+
+    # Constrain transitive dependencies to help pip resolution
+    # These prevent "resolution-too-deep" errors
+    "pyasn1>=0.6.0",
+    "pyasn1-modules>=0.4.0",
+    "google-auth>=2.30.0",
+    "grpcio>=1.67.0,<1.68.0",  # litellm requires <1.68.0
+    "grpcio-status>=1.67.0,<1.68.0",
+    "opentelemetry-api==1.37.0",  # google-adk pins this version
+    "opentelemetry-sdk==1.37.0",
+    "opentelemetry-semantic-conventions==0.58b0",
 
     # Structure prediction & modeling
     # Note: Install openmm, rdkit, mdanalysis, biopython, pandas, numpy, scipy, pdbfixer via conda first

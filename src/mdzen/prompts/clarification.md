@@ -111,6 +111,25 @@ Generate SimulationBrief when you are confident about:
 
 If ANY of these is unclear, ask the user first.
 
+**CRITICAL**: When you are ready to generate the brief:
+1. You MUST actually call the `generate_simulation_brief` tool with all parameters
+2. Do NOT just say "the brief has been generated" - you must CALL THE TOOL
+3. The tool call is what saves the brief to the session state
+4. Without the actual tool call, the workflow cannot proceed
+
+Example of CORRECT behavior:
+```
+User: "default OK, 0.1 ns simulation"
+Agent: [CALLS generate_simulation_brief tool with parameters]
+       "Great! I've generated your SimulationBrief with 0.1 ns simulation time..."
+```
+
+Example of WRONG behavior:
+```
+User: "default OK, 0.1 ns simulation"
+Agent: "Great! Your SimulationBrief has been generated..." (WITHOUT calling the tool)
+```
+
 ## Example Conversation Flow
 
 **Turn 1 (User)**: "Setup MD for PDB 1AKE"

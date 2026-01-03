@@ -483,3 +483,25 @@ MDZEN_LOG_LEVEL=WARNING python main.py run "Setup MD for PDB 1AKE"
 ```
 
 The logging system automatically suppresses noisy third-party loggers (mcp.server, httpx, httpcore, openai, anthropic) while keeping useful tool operation logs visible.
+
+## Known Issues and Fixes
+
+### packmol-memgen numpy compatibility (NumPy 1.24+)
+
+**Issue**: When running solvation with `packmol-memgen`, you may see:
+```
+AttributeError: module 'numpy' has no attribute 'float'.
+`np.float` was a deprecated alias for the builtin `float`.
+```
+
+**Cause**: `packmol-memgen` uses deprecated `np.float` which was removed in NumPy 1.24+.
+
+**Fix**: Patch the v3numpy.py file:
+```bash
+# Find and patch the file
+SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
+sed -i.bak "s/np\.float)/float)/g; s/np\.int)/int)/g" \
+    "$SITE_PACKAGES/packmol_memgen/lib/pdbremix/v3numpy.py"
+```
+
+**Reference**: [AMBER mailing list (Aug 2023)](http://archive.ambermd.org/202308/0029.html)

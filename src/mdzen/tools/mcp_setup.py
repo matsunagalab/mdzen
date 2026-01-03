@@ -208,6 +208,7 @@ def create_http_toolset(
     tool_filter: list[str] | None = None,
     host: str = "localhost",
     use_streamable_http: bool = True,
+    timeout: float = 30.0,
 ) -> McpToolset:
     """Create a McpToolset using HTTP transport (for Colab/Jupyter).
 
@@ -220,6 +221,7 @@ def create_http_toolset(
         host: Hostname where HTTP server is running (default: localhost)
         use_streamable_http: If True, use /mcp endpoint with StreamableHTTPConnectionParams.
                             If False, use /sse endpoint with SseConnectionParams (deprecated).
+        timeout: Connection timeout in seconds (default: 30.0 for initial connection)
 
     Returns:
         Configured McpToolset instance using HTTP transport
@@ -231,6 +233,7 @@ def create_http_toolset(
         return McpToolset(
             connection_params=StreamableHTTPConnectionParams(
                 url=f"http://{host}:{port}/mcp",
+                timeout=timeout,
             ),
             tool_filter=tool_filter,
         )

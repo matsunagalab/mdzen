@@ -505,3 +505,66 @@ sed -i.bak "s/np\.float)/float)/g; s/np\.int)/int)/g" \
 ```
 
 **Reference**: [AMBER mailing list (Aug 2023)](http://archive.ambermd.org/202308/0029.html)
+
+### MCP Transport in Google Colab
+
+**Issue**: In Google Colab, MCP stdio transport fails with:
+```
+io.UnsupportedOperation: fileno
+```
+
+**Cause**: Colab's `ipykernel.iostream` doesn't support `fileno()` which is required by MCP's stdio transport for subprocess communication.
+
+**Solution**: Use **Streamable HTTP transport** instead of stdio in Colab:
+
+1. **Start MCP servers with HTTP transport** (in Setup cell):
+```python
+subprocess.Popen([
+    "/usr/local/bin/python", f"/content/mdzen/servers/{server}",
+    "--http", "--port", str(port)
+], env={**os.environ, "PYTHONPATH": "/content/mdzen/src"})
+```
+
+2. **Create agents with `transport="http"`**:
+```python
+agent, mcp_tools = create_clarification_agent(transport="http")
+agent, mcp_tools = create_setup_agent(transport="http")
+```
+
+**Transport modes**:
+- `stdio` (default): Subprocess-based, works locally but **not in Colab**
+- `http`: Streamable HTTP via `/mcp` endpoint, **required for Colab**
+
+### FastMCP 2.x API for HTTP Transport
+
+**Issue**: Servers fail with `AttributeError: 'FastMCP' object has no attribute '_deprecated_settings'`
+
+**Cause**: The `_deprecated_settings` API was removed in FastMCP 2.x.
+
+**Fix**: Pass `host` and `port` directly to `mcp.run()`:
+```python
+# OLD (broken in FastMCP 2.x)
+mcp._deprecated_settings.host = "0.0.0.0"
+mcp._deprecated_settings.port = args.port
+mcp.run(transport="http")
+
+# NEW (correct FastMCP 2.x API)
+mcp.run(transport="http", host="0.0.0.0", port=args.port)
+```
+
+**Note**: Colab installs `fastmcp>=2.0.0` which requires this new API. The pyproject.toml specifies `fastmcp>=1.0,<2.0` for local development compatibility, but servers are written for 2.x API.
+
+### ADK async issues in Colab/Jupyter
+
+**Issue**: `anyio.WouldBlock` or `asyncio.CancelledError` when using MCP tools in notebooks.
+
+**Cause**: Event loop conflicts between Jupyter's event loop and ADK's async handling.
+
+**Workarounds**:
+1. Use `await` directly in notebook cells (Colab has a running event loop)
+2. Apply `nest_asyncio.apply()` at startup (already done in Setup cell)
+3. Use HTTP transport instead of stdio (avoids subprocess async issues)
+
+**References**:
+- [ADK Issue #755](https://github.com/google/adk-python/issues/755) - Event loop conflicts
+- [ADK Issue #1267](https://github.com/google/adk-python/issues/1267) - CancelledError with StreamableHTTPConnectionParams

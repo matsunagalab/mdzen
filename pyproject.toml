@@ -37,6 +37,7 @@ dependencies = [
     "gemmi>=0.6.0",  # mmCIF parsing for Boltz-2 output
     "dimorphite-dl>=1.3.2",  # pH-dependent protonation state generation
     "pubchempy>=1.0.4",  # PubChem compound search (used by genesis_server)
+    "tavily-python>=0.3.0",  # Web search (used by research_server)
 
     # Topology manipulation
     "parmed>=4.3.0",

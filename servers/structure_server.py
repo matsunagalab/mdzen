@@ -647,6 +647,36 @@ def _estimate_physiological_charge(charge_info: Dict[str, Any], ph: float = 7.4)
     return estimated_charge
 
 
+def _extract_histidine_states(pdb_file: Path) -> dict:
+    """Extract histidine protonation states from PDB file.
+
+    Parses the PDB file to identify HID, HIE, and HIP residues assigned
+    by pdb2pqr/propka.
+
+    Args:
+        pdb_file: Path to PDB file with protonation assigned
+
+    Returns:
+        Dict mapping residue identifier to protonation state
+        e.g., {"A:126": "HIE", "A:134": "HID", "B:172": "HIP"}
+    """
+    his_states = {}
+    try:
+        with open(pdb_file) as f:
+            for line in f:
+                if line.startswith(("ATOM", "HETATM")):
+                    resname = line[17:20].strip()
+                    if resname in ("HID", "HIE", "HIP"):
+                        chain = line[21].strip() or "A"
+                        resnum = line[22:26].strip()
+                        key = f"{chain}:{resnum}"
+                        if key not in his_states:
+                            his_states[key] = resname
+    except Exception as e:
+        logger.warning(f"Could not extract histidine states: {e}")
+    return his_states
+
+
 # Define standard amino acids and water (module-level constants for reuse)
 AMINO_ACIDS = {
     'ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 
@@ -1672,49 +1702,104 @@ def clean_protein(
             "details": f"Wrote {len(final_atoms)} atoms to {output_file}"
         })
         
-        # Step 9: Run pdb4amber to convert to Amber naming conventions
-        logger.info("Running pdb4amber to convert to Amber conventions")
+        # Step 9: pH-dependent protonation + Amber naming conversion
+        # Primary: pdb2pqr + propka (pH-aware, proper Amber naming)
+        # Fallback: pdb4amber --reduce (pH ignored, geometry-based)
+        logger.info(f"Applying pH-dependent protonation (pH {ph})")
         amber_output_file = input_path.parent / f"{stem}.amber.pdb"
-        
+        pdb2pqr_success = False
+
         try:
-            if not pdb4amber_wrapper.is_available():
-                raise RuntimeError("pdb4amber is not available in the environment")
-            
-            # Run pdb4amber with --reduce to ensure Amber-compatible hydrogen naming
-            # --reduce uses Reduce to add/rename hydrogens with proper names (H1, H2, H3)
-            # This fixes N-terminal hydrogen naming issues that would cause tleap errors
-            pdb4amber_wrapper.run([
-                "-i", str(output_file),
-                "-o", str(amber_output_file),
-                "--reduce",  # Use Reduce for proper Amber hydrogen naming
-                "-l", str(input_path.parent / f"{stem}.pdb4amber.log")
-            ])
-            
-            # Verify the output file was created
-            if amber_output_file.exists():
-                result["operations"].append({
-                    "step": "pdb4amber",
-                    "status": "success",
-                    "details": f"Converted to Amber conventions: {amber_output_file}"
-                })
-                logger.info(f"pdb4amber conversion successful: {amber_output_file}")
-                
-                # Update output_file to point to the amber-compatible file
-                result["output_file"] = str(amber_output_file)
-                result["pdbfixer_output"] = str(output_file)  # Keep reference to intermediate file
-            else:
-                raise RuntimeError("pdb4amber did not create output file")
-                
+            # Primary method: pdb2pqr + propka (pH-aware protonation with Amber naming)
+            if pdb2pqr_wrapper.is_available() and add_hydrogens:
+                logger.info(f"Using pdb2pqr with propka for pH {ph}")
+                pqr_output = input_path.parent / f"{stem}.pqr"
+                propka_output = input_path.parent / f"{stem}.propka"
+
+                pdb2pqr_args = [
+                    str(output_file),
+                    str(pqr_output),
+                    "--ff", "AMBER",
+                    "--ffout", "AMBER",
+                    "--titration-state-method", "propka",
+                    "--with-ph", str(ph),
+                    "--pdb-output", str(amber_output_file),
+                    "--keep-chain",
+                    "--drop-water",
+                ]
+
+                try:
+                    pdb2pqr_wrapper.run(pdb2pqr_args)
+
+                    if amber_output_file.exists():
+                        his_states = _extract_histidine_states(amber_output_file)
+                        result["operations"].append({
+                            "step": "protonation",
+                            "status": "success",
+                            "method": "pdb2pqr+propka",
+                            "ph": ph,
+                            "histidine_states": his_states,
+                        })
+                        result["output_file"] = str(amber_output_file)
+                        result["pdbfixer_output"] = str(output_file)
+                        result["protonation_method"] = "pdb2pqr+propka"
+                        result["histidine_states"] = his_states
+                        pdb2pqr_success = True
+                        logger.info(f"pH-aware protonation complete: {len(his_states)} histidine states determined")
+                        if his_states:
+                            logger.info(f"Histidine states: {his_states}")
+                    else:
+                        raise RuntimeError("pdb2pqr did not create output PDB file")
+
+                except Exception as pdb2pqr_error:
+                    logger.warning(f"pdb2pqr failed: {pdb2pqr_error}, falling back to pdb4amber")
+                    result["warnings"].append(f"pdb2pqr failed: {pdb2pqr_error}")
+
+            # Fallback method: pdb4amber --reduce (pH ignored, geometry-based)
+            if not pdb2pqr_success:
+                if add_hydrogens:
+                    logger.warning(f"Using pdb4amber --reduce (pH {ph} will be ignored)")
+                    result["warnings"].append(
+                        f"pH {ph} protonation not applied: using geometry-based hydrogen assignment"
+                    )
+                    reduce_flag = ["--reduce"]
+                else:
+                    reduce_flag = []
+
+                if not pdb4amber_wrapper.is_available():
+                    raise RuntimeError("Neither pdb2pqr nor pdb4amber available for Amber conversion")
+
+                pdb4amber_wrapper.run([
+                    "-i", str(output_file),
+                    "-o", str(amber_output_file),
+                    *reduce_flag,
+                    "-l", str(input_path.parent / f"{stem}.pdb4amber.log")
+                ])
+
+                if amber_output_file.exists():
+                    result["operations"].append({
+                        "step": "protonation",
+                        "status": "success",
+                        "method": "pdb4amber+reduce",
+                        "details": "Geometry-based hydrogen assignment (pH ignored)"
+                    })
+                    result["output_file"] = str(amber_output_file)
+                    result["pdbfixer_output"] = str(output_file)
+                    result["protonation_method"] = "pdb4amber+reduce"
+                    logger.info(f"pdb4amber conversion successful: {amber_output_file}")
+                else:
+                    raise RuntimeError("pdb4amber did not create output file")
+
         except Exception as e:
-            error_msg = f"pdb4amber conversion failed: {str(e)}"
+            error_msg = f"Amber conversion failed: {str(e)}"
             result["warnings"].append(error_msg)
             result["operations"].append({
-                "step": "pdb4amber",
+                "step": "protonation",
                 "status": "error",
                 "details": error_msg
             })
             logger.warning(error_msg)
-            # Keep the PDBFixer output as the final output if pdb4amber fails
+            # Keep the PDBFixer output as the final output if conversion fails
             result["warnings"].append("Using PDBFixer output without Amber naming convention conversion")
 
         # Token optimization: Replace detailed operations with summary

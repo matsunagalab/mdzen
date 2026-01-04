@@ -17,7 +17,7 @@ from google.adk.tools.mcp_tool import McpToolset
 from mdzen.config import get_litellm_model
 from mdzen.prompts import get_setup_instruction
 from mdzen.tools.mcp_setup import get_setup_tools, get_setup_tools_sse
-from mdzen.tools.custom_tools import get_workflow_status_tool
+from mdzen.tools.custom_tools import get_workflow_status_tool, mark_step_complete
 
 
 def create_setup_agent(
@@ -47,11 +47,12 @@ def create_setup_agent(
     else:
         mcp_tools = get_setup_tools()
 
-    # Create FunctionTool for workflow status
+    # Create FunctionTools for workflow management
     status_tool = FunctionTool(get_workflow_status_tool)
+    mark_complete_tool = FunctionTool(mark_step_complete)
 
     # Combine all tools
-    all_tools = mcp_tools + [status_tool]
+    all_tools = mcp_tools + [status_tool, mark_complete_tool]
 
     agent = LlmAgent(
         model=LiteLlm(model=get_litellm_model("setup")),

@@ -384,6 +384,68 @@ def get_workflow_status_tool(tool_context: ToolContext) -> dict:
     return get_workflow_status(completed_steps, outputs)
 
 
+def mark_step_complete(
+    step_name: str,
+    output_files: dict,
+    tool_context: ToolContext,
+) -> dict:
+    """Mark a workflow step as completed and store its output file paths.
+
+    CRITICAL: You MUST call this after EACH successful MCP tool call to track progress.
+    Without calling this, the workflow will not know which steps are complete.
+
+    Args:
+        step_name: Name of the completed step. Must be one of:
+            - "prepare_complex"
+            - "solvate"
+            - "build_topology"
+            - "run_simulation"
+        output_files: Dictionary of output file paths from the step. Include all
+            relevant paths, e.g.:
+            - After prepare_complex: {"merged_pdb": "/path/to/merged.pdb"}
+            - After solvate: {"solvated_pdb": "/path/to/solvated.pdb", "box_dimensions": {...}}
+            - After build_topology: {"parm7": "/path/to/system.parm7", "rst7": "/path/to/system.rst7"}
+            - After run_simulation: {"trajectory": "/path/to/traj.dcd"}
+        tool_context: ADK ToolContext (automatically injected)
+
+    Returns:
+        dict: Updated workflow status with the new completed step
+    """
+    import json
+
+    # Get current state
+    completed_steps = safe_list(tool_context.state.get("completed_steps"))
+    outputs = safe_dict(tool_context.state.get("outputs"))
+
+    # Validate step name
+    valid_steps = ["prepare_complex", "solvate", "build_topology", "run_simulation"]
+    if step_name not in valid_steps:
+        return {
+            "success": False,
+            "error": f"Invalid step_name '{step_name}'. Must be one of: {valid_steps}",
+        }
+
+    # Add step to completed list (avoid duplicates)
+    if step_name not in completed_steps:
+        completed_steps.append(step_name)
+
+    # Merge output files
+    if isinstance(output_files, dict):
+        outputs.update(output_files)
+
+    # Update session state (ADK requires JSON strings for complex types)
+    tool_context.state["completed_steps"] = json.dumps(completed_steps)
+    tool_context.state["outputs"] = json.dumps(outputs)
+
+    return {
+        "success": True,
+        "step_marked": step_name,
+        "completed_steps": completed_steps,
+        "outputs": outputs,
+        "message": f"Step '{step_name}' marked as complete. Progress: {len(completed_steps)}/4",
+    }
+
+
 def run_validation_tool(tool_context: ToolContext) -> dict:
     """Run validation and generate report. Reads parameters from session state.
 

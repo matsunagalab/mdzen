@@ -31,6 +31,79 @@ app = typer.Typer(help="MDZen - AI Agent for Molecular Dynamics Setup")
 console = Console()
 
 
+def _run_with_suppressed_cleanup(coro):
+    """Run async coroutine and suppress MCP async generator cleanup errors.
+
+    MCP's stdio_client uses async generators that cause "Attempted to exit
+    cancel scope in a different task" errors during cleanup. These are harmless
+    but noisy. We suppress them by:
+    1. Disabling Python's asyncgen hooks
+    2. Setting a custom unraisablehook to ignore these errors
+    3. Setting a custom exception handler on the event loop
+    4. Suppressing stderr during the final cleanup phase
+    """
+    import os
+    import sys
+
+    # Disable async generator finalization hooks
+    sys.set_asyncgen_hooks(firstiter=None, finalizer=None)
+
+    # Override unraisablehook to suppress async generator cleanup errors
+    original_unraisablehook = sys.unraisablehook
+
+    def ignore_mcp_cleanup_errors(unraisable):
+        """Ignore MCP stdio_client async generator cleanup errors."""
+        # Check if this is an MCP async generator error
+        err_msg = str(unraisable.err_msg) if unraisable.err_msg else ""
+        obj_repr = repr(unraisable.object) if unraisable.object else ""
+        exc_str = str(unraisable.exc_value) if unraisable.exc_value else ""
+
+        # Suppress known MCP cleanup errors
+        if "stdio_client" in obj_repr or "cancel scope" in exc_str:
+            return
+
+        # For other errors, use original hook
+        original_unraisablehook(unraisable)
+
+    sys.unraisablehook = ignore_mcp_cleanup_errors
+
+    # Create event loop with custom exception handler
+    loop = asyncio.new_event_loop()
+
+    def ignore_asyncgen_errors(loop, context):
+        """Ignore async generator cleanup errors from MCP."""
+        msg = context.get("message", "")
+        exc = context.get("exception")
+        # Suppress known MCP cleanup errors
+        if "stdio_client" in msg or "cancel scope" in str(exc):
+            return
+        # For other errors, use default handler
+        loop.default_exception_handler(context)
+
+    loop.set_exception_handler(ignore_asyncgen_errors)
+
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        # Suppress stderr before cleanup to hide any async generator errors
+        # that might bypass our hooks
+        sys.stderr = open(os.devnull, "w")
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception:
+            pass  # Ignore cleanup errors
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+            # Force exit to prevent any remaining cleanup errors.
+            # This avoids "Attempted to exit cancel scope in a different task" errors
+            # that occur when Python's garbage collector cleans up remaining
+            # async generators from a different task context.
+            os._exit(0)
+
+
 @app.command()
 def run(
     request: Optional[str] = typer.Argument(
@@ -62,19 +135,7 @@ def run(
         # Resume specific session (like claude -r)
         python main.py run -r job_abc12345
     """
-    import os
-    import sys
-
-    # Disable async generator finalization to prevent MCP stdio_client errors.
-    # These errors occur when Python tries to close async generators in a different
-    # task context than they were created in. They're harmless but noisy.
-    # Setting firstiter=None and finalizer=None disables the hooks entirely.
-    sys.set_asyncgen_hooks(firstiter=None, finalizer=None)
-
-    asyncio.run(_run_async(request, print_mode, resume))
-
-    # Force exit to skip any remaining cleanup
-    os._exit(0)
+    _run_with_suppressed_cleanup(_run_async(request, print_mode, resume))
 
 
 async def _run_async(

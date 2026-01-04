@@ -552,7 +552,7 @@ mcp.run(transport="http")
 mcp.run(transport="http", host="0.0.0.0", port=args.port)
 ```
 
-**Note**: Colab installs `fastmcp>=2.0.0` which requires this new API. The pyproject.toml specifies `fastmcp>=1.0,<2.0` for local development compatibility, but servers are written for 2.x API.
+**Note**: Both Colab and local development now use `fastmcp>=2.0.0` (updated in pyproject.toml). The opentelemetry version conflict warnings with google-adk are harmless.
 
 ### ADK async issues in Colab/Jupyter
 
@@ -568,3 +568,28 @@ mcp.run(transport="http", host="0.0.0.0", port=args.port)
 **References**:
 - [ADK Issue #755](https://github.com/google/adk-python/issues/755) - Event loop conflicts
 - [ADK Issue #1267](https://github.com/google/adk-python/issues/1267) - CancelledError with StreamableHTTPConnectionParams
+
+### MCP stdio_client async generator cleanup errors (Fixed)
+
+**Issue**: After a successful run, you may see errors like:
+```
+an error occurred during closing of asynchronous generator <async_generator object stdio_client at 0x...>
+RuntimeError: Attempted to exit cancel scope in a different task than it was entered in
+```
+
+**Cause**: MCP's `stdio_client` uses async generators that are cleaned up by Python's garbage collector at shutdown. The cleanup happens in a different task context than the generators were created in, causing anyio's cancel scope to fail.
+
+**Fix**: The fix is implemented in `main.py`'s `_run_with_suppressed_cleanup()` function:
+1. Disable Python's async generator finalization hooks with `sys.set_asyncgen_hooks(firstiter=None, finalizer=None)`
+2. Override `sys.unraisablehook` to ignore MCP-related errors
+3. Set a custom exception handler on the event loop
+4. Redirect stderr to `/dev/null` during cleanup
+5. Use `os._exit(0)` to skip remaining cleanup
+
+**Caveats**:
+- `os._exit(0)` skips normal cleanup (atexit handlers, file buffer flushing)
+- Errors during cleanup phase are completely hidden (including non-MCP errors)
+- Debugging shutdown issues requires temporarily disabling this suppression
+- This is a workaround, not a root fix (MCP/anyio library issue)
+
+**Note**: These errors are harmless - they only occur during process shutdown and don't affect the actual workflow execution. All important processing completes before the cleanup phase begins

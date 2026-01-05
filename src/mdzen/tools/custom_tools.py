@@ -298,10 +298,26 @@ def run_validation(
         "warnings": [],
     }
 
+    # Standard file locations (fallback if not in outputs dictionary)
+    session_path = Path(session_dir) if session_dir else None
+    standard_paths = {
+        "parm7": session_path / "amber" / "system.parm7" if session_path else None,
+        "rst7": session_path / "amber" / "system.rst7" if session_path else None,
+        "trajectory": session_path / "md_simulation" / "trajectory.dcd" if session_path else None,
+        "merged_pdb": session_path / "merge" / "merged.pdb" if session_path else None,
+        "solvated_pdb": session_path / "solvate" / "solvated.pdb" if session_path else None,
+    }
+
     # Required files (parm7 = Amber topology file with .parm7 extension)
     required_keys = ["parm7", "rst7"]
     for key in required_keys:
+        # First check outputs dict, then fall back to standard paths
         path = setup_outputs.get(key)
+        if not path and standard_paths.get(key):
+            fallback = standard_paths[key]
+            if fallback and fallback.exists():
+                path = str(fallback)
+
         if path and Path(path).exists():
             validation_results["required_files"][key] = {
                 "path": path,
@@ -319,7 +335,13 @@ def run_validation(
     # Optional files
     optional_keys = ["trajectory", "merged_pdb", "solvated_pdb"]
     for key in optional_keys:
+        # First check outputs dict, then fall back to standard paths
         path = setup_outputs.get(key)
+        if not path and standard_paths.get(key):
+            fallback = standard_paths[key]
+            if fallback and fallback.exists():
+                path = str(fallback)
+
         if path and Path(path).exists():
             validation_results["optional_files"][key] = {
                 "path": path,

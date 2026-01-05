@@ -225,10 +225,47 @@ async def save_chat_history(
                 role = getattr(event, "author", "unknown")
                 if hasattr(event.content, "parts"):
                     for part in event.content.parts:
+                        # Text messages
                         if hasattr(part, "text") and part.text:
                             lines.append(f"### {role}")
                             lines.append("")
                             lines.append(part.text)
+                            lines.append("")
+                            lines.append("---")
+                            lines.append("")
+                        # Tool calls (MCP tools, function tools)
+                        if hasattr(part, "function_call") and part.function_call:
+                            fc = part.function_call
+                            tool_name = getattr(fc, "name", "unknown_tool")
+                            tool_args = getattr(fc, "args", {})
+                            lines.append(f"### {role} (Tool Call)")
+                            lines.append("")
+                            lines.append(f"**Tool**: `{tool_name}`")
+                            lines.append("")
+                            lines.append("**Arguments**:")
+                            lines.append("```json")
+                            lines.append(json.dumps(tool_args, indent=2, default=str))
+                            lines.append("```")
+                            lines.append("")
+                            lines.append("---")
+                            lines.append("")
+                        # Tool responses
+                        if hasattr(part, "function_response") and part.function_response:
+                            fr = part.function_response
+                            tool_name = getattr(fr, "name", "unknown_tool")
+                            response = getattr(fr, "response", {})
+                            lines.append(f"### {role} (Tool Response)")
+                            lines.append("")
+                            lines.append(f"**Tool**: `{tool_name}`")
+                            lines.append("")
+                            # Truncate long responses to avoid bloating the log
+                            response_str = json.dumps(response, indent=2, default=str)
+                            if len(response_str) > 2000:
+                                response_str = response_str[:2000] + "\n... (truncated)"
+                            lines.append("**Response**:")
+                            lines.append("```json")
+                            lines.append(response_str)
+                            lines.append("```")
                             lines.append("")
                             lines.append("---")
                             lines.append("")

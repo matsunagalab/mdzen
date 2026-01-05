@@ -104,7 +104,6 @@ def _run_with_suppressed_cleanup(coro):
     def ignore_mcp_cleanup_errors(unraisable):
         """Ignore MCP stdio_client async generator cleanup errors."""
         # Check if this is an MCP async generator error
-        err_msg = str(unraisable.err_msg) if unraisable.err_msg else ""
         obj_repr = repr(unraisable.object) if unraisable.object else ""
         exc_str = str(unraisable.exc_value) if unraisable.exc_value else ""
 
@@ -275,7 +274,6 @@ async def _run_batch(session_service, session_id: str, session_dir: str, request
     """Run in batch mode (no interrupts)."""
     from google.adk.runners import Runner
     from mdzen.agents.full_agent import create_full_agent
-    from mdzen.tools.mcp_setup import close_toolsets
     from mdzen.state.session_manager import (
         initialize_session_state,
         get_session_state,
@@ -339,11 +337,11 @@ async def _run_interactive(session_service, session_id: str, session_dir: str, r
         create_clarification_only_agent,
         create_setup_validation_agent,
     )
-    from mdzen.tools.mcp_setup import close_toolsets
     from mdzen.state.session_manager import (
         initialize_session_state,
         get_session_state,
         save_chat_history,
+        update_session_state,
     )
     from mdzen.utils import suppress_adk_unknown_agent_warnings
     from prompt_toolkit import PromptSession
@@ -411,6 +409,16 @@ async def _run_interactive(session_service, session_id: str, session_dir: str, r
                     console.print("[yellow]Session ended.[/yellow]")
                     return
                 elif user_input.lower() in ["continue", "yes", "y", "ok", "proceed"]:
+                    # Save clarification chat history for validation review
+                    clarification_log = await save_chat_history(
+                        session_service, APP_NAME, DEFAULT_USER, session_id, session_dir
+                    )
+                    if clarification_log:
+                        await update_session_state(
+                            session_service, APP_NAME, DEFAULT_USER, session_id,
+                            {"clarification_log_path": clarification_log}
+                        )
+                        console.print(f"[dim]Clarification log saved: {clarification_log}[/dim]")
                     break
                 else:
                     # User wants to modify - send feedback

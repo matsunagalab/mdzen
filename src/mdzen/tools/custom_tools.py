@@ -262,6 +262,7 @@ def run_validation(
     setup_outputs: dict,
     decision_log: list[dict],
     compressed_setup: str = "",
+    clarification_log_path: str = "",
 ) -> dict:
     """Run validation phase and generate report.
 
@@ -273,11 +274,20 @@ def run_validation(
         setup_outputs: Dictionary of output file paths
         decision_log: List of tool execution logs
         compressed_setup: Compressed setup summary
+        clarification_log_path: Path to clarification chat history file
 
     Returns:
         Dictionary with validation_results and final_report
     """
     from pathlib import Path
+
+    # Read clarification log if available
+    clarification_log = ""
+    if clarification_log_path and Path(clarification_log_path).exists():
+        try:
+            clarification_log = Path(clarification_log_path).read_text()
+        except Exception:
+            pass  # Ignore read errors
 
     # Validate required outputs
     validation_results = {
@@ -360,11 +370,28 @@ def run_validation(
     report_lines.append("")
     report_lines.append(f"Session directory: `{session_dir}`")
 
+    # Add clarification log reference if available
+    if clarification_log:
+        report_lines.append("")
+        report_lines.append("## Clarification Log")
+        report_lines.append("")
+        report_lines.append(f"Full clarification history saved to: `{clarification_log_path}`")
+        # Include a brief excerpt (first 500 chars) to avoid bloating the report
+        excerpt = clarification_log[:500]
+        if len(clarification_log) > 500:
+            excerpt += "\n... (truncated, see full log file)"
+        report_lines.append("")
+        report_lines.append("### Excerpt")
+        report_lines.append("```")
+        report_lines.append(excerpt)
+        report_lines.append("```")
+
     final_report = "\n".join(report_lines)
 
     return {
         "validation_results": validation_results,
         "final_report": final_report,
+        "clarification_log_available": bool(clarification_log),
     }
 
 
@@ -466,6 +493,7 @@ def run_validation_tool(tool_context: ToolContext) -> dict:
     setup_outputs = safe_dict(state.get("outputs"))
     decision_log = safe_list(state.get("decision_log"))
     compressed_setup = str(state.get("compressed_setup", "")) if state.get("compressed_setup") else ""
+    clarification_log_path = str(state.get("clarification_log_path", "")) if state.get("clarification_log_path") else ""
 
     return run_validation(
         simulation_brief=simulation_brief,
@@ -473,4 +501,5 @@ def run_validation_tool(tool_context: ToolContext) -> dict:
         setup_outputs=setup_outputs,
         decision_log=decision_log,
         compressed_setup=compressed_setup,
+        clarification_log_path=clarification_log_path,
     )

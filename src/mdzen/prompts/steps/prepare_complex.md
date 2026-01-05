@@ -32,10 +32,21 @@ You have access to ONLY these tools:
 2. Read SimulationBrief from context for:
    - `pdb_id` or `fasta_sequence`
    - `select_chains` (if specified)
+   - `include_types` (determines what to process - CRITICAL!)
    - `ligand_smiles` (for manual ligand SMILES)
    - `charge_method`, `atom_type` (for ligand params)
-3. Call `prepare_complex` with these parameters + `output_dir`
+3. Call `prepare_complex` with:
+   - `output_dir=<session_dir>` (REQUIRED)
+   - `process_ligands=true` ONLY if "ligand" in include_types
+   - `process_ligands=false` if include_types is ["protein"] only
 4. After success, your task is complete
+
+## CRITICAL: include_types Handling
+
+The `include_types` field in SimulationBrief controls what components to include:
+- `["protein"]` → Set `process_ligands=false` (skip ligand parameterization)
+- `["protein", "ligand"]` → Set `process_ligands=true` (parameterize ligands)
+- `["protein", "water"]` → Set `process_ligands=false` (water handled later in solvation)
 
 ## DO NOT
 

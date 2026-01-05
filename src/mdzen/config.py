@@ -80,6 +80,7 @@ class Settings(BaseSettings):
 
     # Timeout settings (seconds)
     default_timeout: int = 300
+    structure_timeout: int = 600  # antechamber can take several minutes for complex ligands
     solvation_timeout: int = 600
     membrane_timeout: int = 1800
     md_simulation_timeout: int = 3600
@@ -185,7 +186,7 @@ def get_timeout(timeout_type: str) -> int:
     timeout_map = {
         "default": settings.default_timeout,
         "research": settings.default_timeout,
-        "structure": settings.default_timeout,
+        "structure": settings.structure_timeout,  # antechamber needs more time
         "genesis": settings.default_timeout,
         "solvation": settings.solvation_timeout,
         "membrane": settings.membrane_timeout,

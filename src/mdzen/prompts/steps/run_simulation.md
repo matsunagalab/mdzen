@@ -28,7 +28,7 @@ You have access to ONLY these tools:
 
 1. Call `get_workflow_status_tool` to get:
    - `session_dir`: Output directory
-   - `prmtop`: Amber topology file from build_topology step
+   - `parm7`: Amber topology file from build_topology step
    - `rst7`: Amber coordinate file from build_topology step
 2. Read SimulationBrief from context for:
    - `temperature` (default: 300.0 K)
@@ -40,7 +40,7 @@ You have access to ONLY these tools:
    - `constraints` (default: "HBonds")
    - `output_frequency_ps` (default: 10.0 ps)
 3. Call `run_md_simulation` with:
-   - `prmtop=<prmtop>`
+   - `prmtop=<parm7>`  # Note: MCP tool parameter is "prmtop", value comes from state["parm7"]
    - `rst7=<rst7>`
    - `output_dir=<session_dir>`
    - Simulation parameters from SimulationBrief

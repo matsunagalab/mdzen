@@ -66,7 +66,7 @@ When you call `get_workflow_status_tool`, it returns `available_outputs` which c
 - **After success: call mark_step_complete("build_topology", {"parm7": "<path>", "rst7": "<path>"})**
 
 ### Step 4: run_md_simulation (md_simulation_server)
-- Input: The actual prmtop and rst7 paths from step 3 result
+- Input: The actual parm7 and rst7 paths from step 3 result
 - **REQUIRED: output_dir=session_dir**
 - Output produces: trajectory
 - **After success: call mark_step_complete("run_simulation", {"trajectory": "<path>"})**
@@ -108,7 +108,7 @@ When you call `get_workflow_status_tool`, it returns `available_outputs` which c
 7. **Call mark_step_complete(step_name="build_topology", output_files={"parm7": "...", "rst7": "..."})**
    → Returns: success=true, completed_steps=["prepare_complex", "solvate", "build_topology"]
 
-8. Call run_md_simulation(prmtop_file="...", inpcrd_file="...", output_dir="/outputs/session_abc123")
+8. Call run_md_simulation(prmtop_file=state["parm7"], inpcrd_file=state["rst7"], output_dir="/outputs/session_abc123")
    → Returns: success=true, trajectory="..."
 
 9. **Call mark_step_complete(step_name="run_simulation", output_files={"trajectory": "..."})**

@@ -50,7 +50,7 @@ STEP_CONFIG: dict[str, StepConfig] = {
     },
     "run_simulation": {
         "tool": "run_md_simulation",
-        "inputs": "Requires: prmtop, rst7",
+        "inputs": "Requires: parm7, rst7",
         "servers": ["md_simulation"],
         "allowed_tools": ["run_md_simulation"],
         "estimate": "5-60 minutes (depends on simulation_time)",
@@ -86,7 +86,7 @@ STEP_PREREQUISITES: dict[str, list[str]] = {
     "prepare_complex": [],
     "solvate": ["merged_pdb"],
     "build_topology": ["solvated_pdb", "box_dimensions"],
-    "run_simulation": ["prmtop", "rst7"],
+    "run_simulation": ["parm7", "rst7"],
 }
 
 

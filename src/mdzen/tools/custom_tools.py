@@ -298,8 +298,8 @@ def run_validation(
         "warnings": [],
     }
 
-    # Required files
-    required_keys = ["prmtop", "rst7"]
+    # Required files (parm7 = Amber topology file with .parm7 extension)
+    required_keys = ["parm7", "rst7"]
     for key in required_keys:
         path = setup_outputs.get(key)
         if path and Path(path).exists():

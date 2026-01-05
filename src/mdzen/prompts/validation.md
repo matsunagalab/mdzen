@@ -10,7 +10,7 @@ Simply call the `run_validation_tool`. It automatically reads all required data 
 - Clarification log (user-agent conversation history)
 
 The tool will:
-1. Validate that required files exist (prmtop, rst7)
+1. Validate that required files exist (parm7, rst7)
 2. Check for critical errors in execution
 3. Review clarification log to ensure setup matches user intent
 4. Generate a comprehensive markdown report

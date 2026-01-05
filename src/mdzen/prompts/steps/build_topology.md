@@ -56,5 +56,5 @@ This comes from the solvate step output. Without it, topology generation will fa
 ## Expected Output
 
 On success, `build_amber_system` returns:
-- `prmtop`: Path to Amber topology file
+- `parm7`: Path to Amber topology file (.parm7 format)
 - `rst7`: Path to Amber coordinate file

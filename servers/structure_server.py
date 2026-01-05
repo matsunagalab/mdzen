@@ -2953,8 +2953,8 @@ def prepare_complex(
         
         # Step 2: Split structure
         logger.info("Step 2: Splitting structure...")
-        # Note: In FastMCP 1.x, @mcp.tool() returns the original function, call directly
-        split_result = split_molecules(
+        # Note: In FastMCP 2.x, @mcp.tool() returns FunctionTool object, use .fn to call
+        split_result = split_molecules.fn(
             str(structure_file),
             output_dir=str(out_dir.parent),  # Will create job_id subdirectory
             select_chains=select_chains,
@@ -3013,7 +3013,7 @@ def prepare_complex(
                 }
                 
                 try:
-                    clean_result = clean_protein(
+                    clean_result = clean_protein.fn(
                         pdb_file=protein_file,
                         ph=ph,
                         cap_termini=cap_termini,
@@ -3093,7 +3093,7 @@ def prepare_complex(
                         user_smiles = ligand_smiles[ligand_id]
                     
                     # Clean ligand
-                    clean_result = clean_ligand(
+                    clean_result = clean_ligand.fn(
                         ligand_pdb=ligand_file,
                         ligand_id=ligand_id,
                         smiles=user_smiles,
@@ -3108,7 +3108,7 @@ def prepare_complex(
                         
                         # Run parameterization if requested
                         if run_parameterization:
-                            param_result = run_antechamber_robust(
+                            param_result = run_antechamber_robust.fn(
                                 ligand_file=clean_result["sdf_file"],
                                 net_charge=clean_result["net_charge"],
                                 residue_name=ligand_id[:3].upper(),  # 3-letter residue name
@@ -3179,7 +3179,7 @@ def prepare_complex(
                                 result["warnings"].append(f"No amber.pdb found for ligand {lig.get('ligand_id')}")
             
             if pdb_files_to_merge:
-                merge_result = merge_structures(
+                merge_result = merge_structures.fn(
                     pdb_files=pdb_files_to_merge,
                     output_dir=str(out_dir.parent),  # Will create subdirectory
                     output_name="merged"

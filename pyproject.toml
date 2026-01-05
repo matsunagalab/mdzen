@@ -6,8 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     # MCP Server (FastMCP)
-    # Note: FastMCP 1.x works well with google-adk; 2.x has different decorator behavior
-    "fastmcp>=1.0.0",
+    # Note: fastmcp 2.x is required for Streamable HTTP transport (used in Jupyter/Colab)
+    # The opentelemetry version conflict with google-adk is harmless (just warnings)
+    "fastmcp>=2.0.0",
     "mcp[cli]>=1.18.0",
 
     # Google Agent Development Kit (ADK)

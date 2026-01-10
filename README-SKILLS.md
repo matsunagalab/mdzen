@@ -77,7 +77,7 @@ b) Ligand Handling:
 Agent: Understood. Setting up with chain A only, no ligand...
 
 [Bash] python scripts/mdzen_cli.py prepare --structure-file ./workdir/1ake.cif --chains A --no-ligands
-[Bash] python scripts/mdzen_cli.py solvate --pdb-file ./workdir/prepare/merged.pdb
+[Bash] python scripts/mdzen_cli.py solvate --pdb-file ./workdir/merge/merged.pdb
 [Bash] python scripts/mdzen_cli.py topology --pdb-file ./workdir/solvate/solvated.pdb --box-dimensions '...'
 
 Done! Generated files:

@@ -94,13 +94,13 @@ python scripts/mdzen_cli.py prepare \
 
 To exclude ligands, add `--no-ligands`.
 
-Output: `./workdir/prepare/merged.pdb`, `./workdir/prepare/ligand_params.json` (if ligands)
+Output: `./workdir/merge/merged.pdb`, `./workdir/split/ligand_params.json` (if ligands)
 
 ### Step 3: Solvate Structure
 
 ```bash
 python scripts/mdzen_cli.py solvate \
-  --pdb-file ./workdir/prepare/merged.pdb \
+  --pdb-file ./workdir/merge/merged.pdb \
   --distance 12.0 \
   --salt-concentration 0.15 \
   --output-dir ./workdir
@@ -121,7 +121,7 @@ python scripts/mdzen_cli.py topology \
   --output-dir ./workdir
 ```
 
-If ligands were included, add `--ligand-params ./workdir/prepare/ligand_params.json`.
+If ligands were included, add `--ligand-params ./workdir/split/ligand_params.json`.
 
 Output: `./workdir/amber/system.parm7`, `./workdir/amber/system.rst7`
 
@@ -172,9 +172,11 @@ Use `python scripts/mdzen_cli.py <command> --help` for full options.
 
 ```
 workdir/
-├── prepare/merged.pdb           # Prepared structure
+├── merge/merged.pdb             # Prepared structure
+├── split/                       # Split molecules & ligand params
 ├── solvate/solvated.pdb         # Solvated structure
-└── amber/system.{parm7,rst7}    # Amber topology & coordinates
+├── amber/system.{parm7,rst7}    # Amber topology & coordinates
+└── md_simulation/               # Trajectory & final structure
 ```
 
 ## References

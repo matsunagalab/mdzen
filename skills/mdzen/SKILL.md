@@ -1,44 +1,34 @@
 ---
 name: mdzen
 description: >
-  Setup molecular dynamics (MD) simulations for proteins and ligands using Amber/OpenMM.
-  Handles structure download from PDB/AlphaFold, preparation, solvation, topology generation,
-  and short test simulations. Use when: setting up MD simulations, preparing protein structures,
-  creating Amber parm7/rst7 files, or running molecular dynamics.
+  Sets up molecular dynamics (MD) simulations for proteins and ligands using Amber/OpenMM.
+  Downloads structures from PDB/AlphaFold, prepares complexes, adds solvent/ions, generates
+  Amber topology files (parm7/rst7), and runs short test simulations. Use when: user mentions
+  MD simulation, molecular dynamics, PDB structure preparation, Amber files, prmtop, inpcrd,
+  protein solvation, ligand parameterization, GAFF2, ff14SB, or OpenMM simulation setup.
 allowed-tools: Read, Write, Bash
 ---
 
-# MDZen - Molecular Dynamics Setup Assistant
-
-You are a computational biophysics expert helping users set up molecular dynamics simulations.
+# MDZen - MD Simulation Setup
 
 ## Prerequisites
 
-Ensure the conda environment is activated with MDZen installed:
-
 ```bash
-conda activate mdzen
-cd /path/to/mdzen  # Project root directory
+conda activate mdzen && cd /path/to/mdzen
 ```
 
-## Phase 1: Clarification (ReACT Dialogue)
+## Phase 1: Clarification
 
-**IMPORTANT**: Before calling any tools, gather simulation requirements through conversation.
+**Before running commands**, confirm with user:
 
-### Required Information (Must Confirm)
+| Required | Options |
+|----------|---------|
+| Structure | PDB ID / UniProt ID / file path |
+| Chains | Which chains to include |
+| Ligands | Include or remove |
+| Solvent | Water (default) or membrane |
 
-- [ ] **Structure Source**: PDB ID? UniProt ID? FASTA sequence? Local file?
-- [ ] **Chain Selection**: Which chains to include? (check with `inspect_molecules` first)
-- [ ] **Ligand Handling**: Include ligands? Remove? Need SMILES for external ligand?
-- [ ] **Solvent Environment**: Explicit water? Membrane?
-
-### Optional Information (Has Defaults)
-
-- [ ] **Temperature**: 300K (default)
-- [ ] **Ion Concentration**: 0.15M NaCl (default)
-- [ ] **Force Field**: ff14SB for protein, GAFF2 for ligand (default)
-- [ ] **Water Model**: TIP3P (default)
-- [ ] **Simulation Time**: 0.1 ns for testing (default)
+**Defaults** (use unless specified): 300K, 0.15M NaCl, ff14SB, GAFF2, TIP3P, 0.1ns
 
 ### Dialogue Pattern
 
@@ -70,7 +60,16 @@ You: Understood. Proceeding with:
 
 ## Phase 2-5: Workflow Execution
 
-Execute steps **IN EXACT ORDER**. Do not skip or reorder steps.
+**Progress Checklist** (copy and update as you proceed):
+```
+- [ ] Step 1: Download structure
+- [ ] Step 2: Prepare complex
+- [ ] Step 3: Solvate structure
+- [ ] Step 4: Build topology
+- [ ] Step 5: Run simulation (optional)
+```
+
+Execute steps **IN EXACT ORDER**. Do not skip or reorder.
 
 ### Step 1: Download Structure
 
@@ -152,73 +151,34 @@ Output: Trajectory and final structure in `./workdir/`
 
 Use `python scripts/mdzen_cli.py <command> --help` for full options.
 
-## Common Workflows
+## Quick Reference
 
-### Apo Protein (No Ligand)
-```bash
-# 1. Download
-python scripts/mdzen_cli.py download --pdb-id 1AKE --output-dir ./workdir
-
-# 2. Prepare (skip ligands)
-python scripts/mdzen_cli.py prepare --structure-file ./workdir/1ake.cif \
-  --chains A --no-ligands --output-dir ./workdir
-
-# 3. Solvate
-python scripts/mdzen_cli.py solvate --pdb-file ./workdir/prepare/merged.pdb \
-  --output-dir ./workdir
-
-# 4. Topology (use box dimensions from solvate output)
-python scripts/mdzen_cli.py topology --pdb-file ./workdir/solvate/solvated.pdb \
-  --box-dimensions '{"box_a": 77.66, ...}' --output-dir ./workdir
-```
-
-### Protein-Ligand Complex
-```bash
-# Same as above, but without --no-ligands in step 2
-# And include --ligand-params in step 4
-python scripts/mdzen_cli.py topology --pdb-file ./workdir/solvate/solvated.pdb \
-  --box-dimensions '...' \
-  --ligand-params ./workdir/prepare/ligand_params.json \
-  --output-dir ./workdir
-```
+| Workflow | Key Difference |
+|----------|---------------|
+| **Apo protein** | Add `--no-ligands` in Step 2 |
+| **With ligand** | Add `--ligand-params` in Step 4 |
 
 ## Error Handling
 
-### Common Issues
+| Error | Solution |
+|-------|----------|
+| "No box dimensions" | Pass box dims from solvate output |
+| "Ligand parameterization failed" | Try `--no-ligands` |
+| "Chain not found" | Check available chains in structure |
+| "tleap failed" | Check atom types, try different forcefield |
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| "No box dimensions" | Missing --box-dimensions | Pass box dims from solvate output |
-| "Ligand parameterization failed" | Invalid structure | Check ligand, try --no-ligands |
-| "Chain not found" | Wrong chain ID | Check structure file for available chains |
-| "tleap failed" | Force field issue | Check atom types, try different forcefield |
-
-### Troubleshooting Steps
-
-1. **Always check the JSON output** from each command
-2. **Verify file paths** exist before running next step
-3. **Follow step order** - solvate before topology!
-4. **Use --help** for full command options
+**Key rules**: Check JSON output after each step. Verify file paths. Follow step order.
 
 ## Output Files
 
-After successful workflow:
-
 ```
 workdir/
-├── 1ake.cif              # Downloaded structure
-├── prepare/
-│   ├── merged.pdb        # Prepared structure
-│   └── ligand_params.json# Ligand parameters (if any)
-├── solvate/
-│   └── solvated.pdb      # Solvated structure
-└── amber/
-    ├── system.parm7      # Amber topology
-    └── system.rst7       # Amber coordinates
+├── prepare/merged.pdb           # Prepared structure
+├── solvate/solvated.pdb         # Solvated structure
+└── amber/system.{parm7,rst7}    # Amber topology & coordinates
 ```
 
-## For More Details
+## References
 
-- Workflow details: see `workflow-guide.md`
-- Amber parameters: see `parameters.md`
-- Troubleshooting: see `troubleshooting.md`
+- [parameters.md](parameters.md) - Force field and simulation parameters
+- [troubleshooting.md](troubleshooting.md) - Detailed error solutions

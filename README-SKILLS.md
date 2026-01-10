@@ -36,17 +36,17 @@ pip install -e .
 
 **Claude Code:**
 ```bash
-cp -r skills/mdzen ~/.claude/skills/
+cp -r skills/setting-up-md-simulations ~/.claude/skills/
 ```
 
 **OpenCode:**
 ```bash
-cp -r skills/mdzen ~/.config/opencode/skills/
+cp -r skills/setting-up-md-simulations ~/.config/opencode/skills/
 ```
 
 **Crush:**
 ```bash
-cp -r skills/mdzen ~/.config/crush/skills/
+cp -r skills/setting-up-md-simulations ~/.config/crush/skills/
 ```
 
 ### 3. Use It!
@@ -165,7 +165,7 @@ curl http://localhost:3000/health
 ## Skill Files
 
 ```
-skills/mdzen/
+skills/setting-up-md-simulations/
 ├── SKILL.md              # Main skill (workflow + tools)
 ├── workflow-guide.md     # Detailed step-by-step guide
 ├── parameters.md         # Amber/OpenMM parameter reference
@@ -213,7 +213,7 @@ docker compose up -d
 
 ## Troubleshooting
 
-See `skills/mdzen/troubleshooting.md` for common issues and solutions.
+See `skills/setting-up-md-simulations/troubleshooting.md` for common issues and solutions.
 
 ## License
 

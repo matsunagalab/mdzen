@@ -1,5 +1,5 @@
 ---
-name: mdzen
+name: setting-up-md-simulations
 description: >
   Sets up molecular dynamics (MD) simulations for proteins and ligands using Amber/OpenMM.
   Downloads structures from PDB/AlphaFold, prepares complexes, adds solvent/ions, generates
@@ -30,33 +30,12 @@ conda activate mdzen && cd /path/to/mdzen
 
 **Defaults** (use unless specified): 300K, 0.15M NaCl, ff14SB, GAFF2, TIP3P, 0.1ns
 
-### Dialogue Pattern
+### Dialogue Flow
 
-```
-You: What structure would you like to simulate? (PDB ID, UniProt ID, or file path)
-User: 1AKE
-You: Let me download and analyze PDB 1AKE...
-     [Bash: python scripts/mdzen_cli.py download --pdb-id 1AKE --output-dir ./workdir]
-
-     I found:
-     - Protein: Adenylate Kinase (2 chains: A, B)
-     - Ligand: AP5 (inhibitor)
-
-     Questions:
-     a) Chain Selection:
-        1. Chain A only (monomer) - Recommended
-        2. Both chains A and B
-
-     b) Ligand Handling:
-        1. Include AP5 ligand
-        2. Remove ligand (apo simulation)
-
-User: a1, b2
-You: Understood. Proceeding with:
-     - Chain A only
-     - Remove ligand (apo simulation)
-     - Default settings (TIP3P water, 0.15M NaCl, 300K)
-```
+1. Ask: PDB ID / UniProt ID / file path
+2. Download & inspect: `python scripts/mdzen_cli.py download --pdb-id <ID>`
+3. Present options: chains (recommend monomer), ligands (include/remove)
+4. Confirm → proceed with workflow
 
 ## Phase 2-5: Workflow Execution
 
@@ -80,7 +59,7 @@ python scripts/mdzen_cli.py download \
   --output-dir ./workdir
 ```
 
-Output: `./workdir/1ake.cif`
+**Verify**: `"success": true` in JSON output, file exists at `./workdir/<pdb_id>.cif`
 
 ### Step 2: Prepare Complex
 
@@ -94,7 +73,7 @@ python scripts/mdzen_cli.py prepare \
 
 To exclude ligands, add `--no-ligands`.
 
-Output: `./workdir/merge/merged.pdb`, `./workdir/split/ligand_params.json` (if ligands)
+**Verify**: `"success": true`, `"merged_pdb"` path in output. If errors, see [troubleshooting.md](troubleshooting.md)
 
 ### Step 3: Solvate Structure
 
@@ -106,9 +85,10 @@ python scripts/mdzen_cli.py solvate \
   --output-dir ./workdir
 ```
 
-Output: `./workdir/solvate/solvated.pdb`, box dimensions in JSON output
-
-**CRITICAL**: Save the box_dimensions from the output for the next step!
+**Verify**: `"success": true` and save `box_dimensions` for next step:
+```json
+{"box_a": 71.66, "box_b": 71.66, "box_c": 71.66}
+```
 
 ### Step 4: Build Topology
 
@@ -121,9 +101,9 @@ python scripts/mdzen_cli.py topology \
   --output-dir ./workdir
 ```
 
-If ligands were included, add `--ligand-params ./workdir/split/ligand_params.json`.
+If ligands included, add `--ligand-params ./workdir/split/ligand_params.json`.
 
-Output: `./workdir/amber/system.parm7`, `./workdir/amber/system.rst7`
+**Verify**: `"success": true`, files exist: `./workdir/amber/system.parm7`, `system.rst7`
 
 ### Step 5: Run Simulation (Optional)
 
@@ -136,7 +116,7 @@ python scripts/mdzen_cli.py simulate \
   --output-dir ./workdir
 ```
 
-Output: Trajectory and final structure in `./workdir/`
+**Verify**: `"success": true`, trajectory at `./workdir/md_simulation/md_trajectory.dcd`
 
 ## CLI Command Reference
 
@@ -177,6 +157,18 @@ workdir/
 ├── solvate/solvated.pdb         # Solvated structure
 ├── amber/system.{parm7,rst7}    # Amber topology & coordinates
 └── md_simulation/               # Trajectory & final structure
+```
+
+## Final Verification
+
+After Step 4, confirm topology files:
+```bash
+ls -la workdir/amber/system.{parm7,rst7}
+```
+
+Quick validation with parmed:
+```bash
+python -c "import parmed; p=parmed.load_file('workdir/amber/system.parm7'); print(f'Atoms: {len(p.atoms)}')"
 ```
 
 ## References
